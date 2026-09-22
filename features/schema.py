@@ -6,9 +6,7 @@ from typing import Optional, List
 import json
 
 
-# ---------------------------------------------------------------------------
 # IPsec Feature Row
-# ---------------------------------------------------------------------------
 
 @dataclass
 class IPsecFeatureRow:
@@ -25,9 +23,7 @@ class IPsecFeatureRow:
     6. Ground-truth labels   — filled from label JSON files (None at inference time)
     """
 
-    # ------------------------------------------------------------------
     # 1. Session identity
-    # ------------------------------------------------------------------
     session_id: str
     """Unique capture session ID — matches the PCAP filename stem.
     Format: <mode>_<cipher>_<dh>_<pfs>_<traffic>_<seq>, e.g.
@@ -51,9 +47,7 @@ class IPsecFeatureRow:
     duration: float
     """Total session capture duration in seconds."""
 
-    # ------------------------------------------------------------------
     # 2. IKE fields  (plaintext — Aadi's ike_parser.py fills these)
-    # ------------------------------------------------------------------
     ike_version: int
     """IKE protocol version: 1 or 2."""
 
@@ -82,9 +76,9 @@ class IPsecFeatureRow:
     ike_handshake_duration: float
     """Seconds from the first to the last IKE packet in the handshake."""
 
-    # ------------------------------------------------------------------
+    
     # 3. Inferred config  (from IKE negotiation — Aadi fills these)
-    # ------------------------------------------------------------------
+    
     mode: str
     """Tunnel or transport mode.
     Values: 'tunnel' | 'transport'
@@ -114,9 +108,9 @@ class IPsecFeatureRow:
     """ESP Security Parameter Index (hex) for the child SA.
     Extracted from the IKE_AUTH or CREATE_CHILD_SA response."""
 
-    # ------------------------------------------------------------------
+   
     # 4. ESP metadata features  (Gowri's pipeline.py fills these)
-    # ------------------------------------------------------------------
+    
     esp_packet_count: int
     """Total number of ESP packets observed in this session."""
 
@@ -164,9 +158,9 @@ class IPsecFeatureRow:
     """Asymmetry ratio: outbound_bytes / (inbound_bytes + 1).
     High ratio → mostly upload. Low ratio → mostly download."""
 
-    # ------------------------------------------------------------------
+    
     # 5. Model outputs  (inference.py fills these at runtime)
-    # ------------------------------------------------------------------
+   
     traffic_class: Optional[str] = None
     """Predicted traffic type inside the ESP tunnel.
     Values: 'web' | 'voip' | 'video_stream' | 'file_transfer' | 'icmp'"""
@@ -201,9 +195,9 @@ class IPsecFeatureRow:
     report_id: Optional[str] = None
     """UUID assigned when a PDF report is generated for this session."""
 
-    # ------------------------------------------------------------------
+   
     # 6. Ground-truth labels  (None at inference time — Sanjay fills these)
-    # ------------------------------------------------------------------
+   
     label_config: Optional[str] = None
     """Ground-truth config combo string, e.g. 'tunnel_aes256gcm_group19_pfs'.
     Loaded from data/labels/<session_id>.json."""
@@ -212,9 +206,9 @@ class IPsecFeatureRow:
     """Ground-truth traffic class, e.g. 'web'.
     Loaded from data/labels/<session_id>.json."""
 
-    # ------------------------------------------------------------------
+   
     # Helpers
-    # ------------------------------------------------------------------
+   
 
     def to_dict(self) -> dict:
         """Serialise to a plain dict (suitable for JSON or Kafka publish)."""
@@ -286,9 +280,8 @@ class IPsecFeatureRow:
     ]
 
 
-# ---------------------------------------------------------------------------
 # Report Schema
-# ---------------------------------------------------------------------------
+
 
 @dataclass
 class SessionReport:
@@ -337,9 +330,8 @@ class SessionReport:
         return asdict(self)
 
 
-# ---------------------------------------------------------------------------
 # Kafka Message Schemas
-# ---------------------------------------------------------------------------
+
 
 @dataclass
 class KafkaFeatureMessage:
@@ -386,9 +378,8 @@ class KafkaPipelineMetrics:
     pipeline_latency_ms: float = 0.0
 
 
-# ---------------------------------------------------------------------------
 # Enumerations (use these string constants everywhere — no magic strings)
-# ---------------------------------------------------------------------------
+
 
 class CipherSuite:
     AES128_CBC = "aes128_cbc"
