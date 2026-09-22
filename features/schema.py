@@ -1,13 +1,3 @@
-"""
-features/schema.py
-==================
-Single source of truth for all data structures in the IPsec VPN Analyzer.
-
-EVERYONE imports from here. Do not redefine these classes elsewhere.
-Any schema change must be discussed with the team and updated here first.
-
-Authors : Ebin (SIH 2026)
-"""
 
 from __future__ import annotations
 
