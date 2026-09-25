@@ -1,4 +1,5 @@
 
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field, asdict
@@ -6,7 +7,9 @@ from typing import Optional, List
 import json
 
 
+# ---------------------------------------------------------------------------
 # IPsec Feature Row
+# ---------------------------------------------------------------------------
 
 @dataclass
 class IPsecFeatureRow:
@@ -23,7 +26,9 @@ class IPsecFeatureRow:
     6. Ground-truth labels   — filled from label JSON files (None at inference time)
     """
 
+    # ------------------------------------------------------------------
     # 1. Session identity
+    # ------------------------------------------------------------------
     session_id: str
     """Unique capture session ID — matches the PCAP filename stem.
     Format: <mode>_<cipher>_<dh>_<pfs>_<traffic>_<seq>, e.g.
@@ -47,7 +52,9 @@ class IPsecFeatureRow:
     duration: float
     """Total session capture duration in seconds."""
 
+    # ------------------------------------------------------------------
     # 2. IKE fields  (plaintext — Aadi's ike_parser.py fills these)
+    # ------------------------------------------------------------------
     ike_version: int
     """IKE protocol version: 1 or 2."""
 
@@ -76,9 +83,9 @@ class IPsecFeatureRow:
     ike_handshake_duration: float
     """Seconds from the first to the last IKE packet in the handshake."""
 
-    
+    # ------------------------------------------------------------------
     # 3. Inferred config  (from IKE negotiation — Aadi fills these)
-    
+    # ------------------------------------------------------------------
     mode: str
     """Tunnel or transport mode.
     Values: 'tunnel' | 'transport'
@@ -108,9 +115,9 @@ class IPsecFeatureRow:
     """ESP Security Parameter Index (hex) for the child SA.
     Extracted from the IKE_AUTH or CREATE_CHILD_SA response."""
 
-   
+    # ------------------------------------------------------------------
     # 4. ESP metadata features  (Gowri's pipeline.py fills these)
-    
+    # ------------------------------------------------------------------
     esp_packet_count: int
     """Total number of ESP packets observed in this session."""
 
@@ -154,13 +161,33 @@ class IPsecFeatureRow:
     esp_pkts_per_sec: float
     """Packet rate: total ESP packets / session duration."""
 
-    bidir_ratio: float
-    """Asymmetry ratio: outbound_bytes / (inbound_bytes + 1).
-    High ratio → mostly upload. Low ratio → mostly download."""
+    asymmetry_ratio: float
+    """Upload/download asymmetry: outbound_bytes / (inbound_bytes + 1).
+    High → mostly upload. Low → mostly download. Near 1.0 → symmetric (e.g. VoIP).
+    Renamed from bidir_ratio to avoid confusion — this is directional asymmetry, not
+    a bidirectional count."""
 
-    
+    esp_pkt_size_entropy: float
+    """Shannon entropy of the ESP packet size distribution (bits).
+    Computed by binning packet sizes into 64-byte buckets and applying
+    H = -sum(p * log2(p)). High entropy → many different sizes (web, video).
+    Low entropy → very regular sizes (VoIP ~160 bytes, ICMP fixed payload)."""
+
+    esp_iat_entropy: float
+    """Shannon entropy of the inter-arrival time distribution (bits).
+    Computed by binning IATs into 5 ms buckets.
+    Low entropy → very regular timing (VoIP, ICMP).
+    High entropy → bursty, irregular arrivals (web, file transfer)."""
+
+    esp_active_fraction: float
+    """Fraction of the session duration that contains active ESP traffic.
+    active_fraction = active_time / duration, where active_time = sum of all
+    inter-packet gaps < 500 ms. Near 1.0 → sustained flow (video, VoIP).
+    Near 0.0 → sparse/idle session (ICMP echo, idle web)."""
+
+    # ------------------------------------------------------------------
     # 5. Model outputs  (inference.py fills these at runtime)
-   
+    # ------------------------------------------------------------------
     traffic_class: Optional[str] = None
     """Predicted traffic type inside the ESP tunnel.
     Values: 'web' | 'voip' | 'video_stream' | 'file_transfer' | 'icmp'"""
@@ -195,9 +222,9 @@ class IPsecFeatureRow:
     report_id: Optional[str] = None
     """UUID assigned when a PDF report is generated for this session."""
 
-   
+    # ------------------------------------------------------------------
     # 6. Ground-truth labels  (None at inference time — Sanjay fills these)
-   
+    # ------------------------------------------------------------------
     label_config: Optional[str] = None
     """Ground-truth config combo string, e.g. 'tunnel_aes256gcm_group19_pfs'.
     Loaded from data/labels/<session_id>.json."""
@@ -206,9 +233,9 @@ class IPsecFeatureRow:
     """Ground-truth traffic class, e.g. 'web'.
     Loaded from data/labels/<session_id>.json."""
 
-   
+    # ------------------------------------------------------------------
     # Helpers
-   
+    # ------------------------------------------------------------------
 
     def to_dict(self) -> dict:
         """Serialise to a plain dict (suitable for JSON or Kafka publish)."""
@@ -243,8 +270,16 @@ class IPsecFeatureRow:
 
     def esp_feature_vector(self) -> list:
         """
-        Return only the ESP metadata features used by the traffic classification
-        model (Model 2) and the Isolation Forest. Column order must stay stable.
+        Return the ESP metadata features used by Model 2 (traffic classification)
+        and the Isolation Forest. 18 features total.
+
+        Column order is FROZEN — Sanjay's train.py and Aadi's inference.py both
+        depend on this order matching exactly. Add new features at the END only,
+        and bump ESP_FEATURE_NAMES in the same commit.
+
+        Fix notes:
+        - bidir_ratio renamed to asymmetry_ratio (fix #3)
+        - esp_pkt_size_entropy, esp_iat_entropy, esp_active_fraction added (fix #1)
         """
         return [
             self.esp_packet_count,
@@ -261,8 +296,41 @@ class IPsecFeatureRow:
             self.esp_burst_size_mean,
             self.esp_bytes_per_sec,
             self.esp_pkts_per_sec,
-            self.bidir_ratio,
+            self.asymmetry_ratio,          # renamed from bidir_ratio
+            self.esp_pkt_size_entropy,     # new
+            self.esp_iat_entropy,          # new
+            self.esp_active_fraction,      # new
         ]
+
+    def anomaly_score_raw(self, iso_forest_model) -> float:
+        """
+        Compute the anomaly score from a fitted IsolationForest model.
+        Contract (fix #4): ALWAYS negate score_samples() so that higher = more anomalous.
+        Store the result in self.anomaly_score.
+
+        Usage in inference.py:
+            row.anomaly_score = row.anomaly_score_raw(iso_forest)
+        """
+        import numpy as np
+        raw = iso_forest_model.score_samples([self.esp_feature_vector()])[0]
+        return float(-raw)   # negated: score_samples returns negative for anomalies
+
+    @staticmethod
+    def compute_ai_confidence(config_confidence: float, traffic_confidence: float) -> float:
+        """
+        Compute ai_confidence as the geometric mean of both model top-class
+        probabilities (fix #5). Geometric mean penalises cases where one model
+        is confident but the other is not — a better combined signal than arithmetic mean.
+
+        Formula: sqrt(config_confidence * traffic_confidence)
+
+        Usage in inference.py:
+            result['ai_confidence'] = IPsecFeatureRow.compute_ai_confidence(
+                config_probs.max(), traffic_probs.max()
+            )
+        """
+        import math
+        return math.sqrt(config_confidence * traffic_confidence)
 
     IKE_FEATURE_NAMES = [
         "ike_version", "ike_exchange_type", "sa_proposal_count",
@@ -276,12 +344,17 @@ class IPsecFeatureRow:
         "esp_pkt_size_min", "esp_pkt_size_max",
         "esp_iat_mean", "esp_iat_std", "esp_iat_min", "esp_iat_max",
         "esp_burst_count", "esp_burst_size_mean",
-        "esp_bytes_per_sec", "esp_pkts_per_sec", "bidir_ratio",
+        "esp_bytes_per_sec", "esp_pkts_per_sec",
+        "asymmetry_ratio",         # renamed from bidir_ratio
+        "esp_pkt_size_entropy",    # new
+        "esp_iat_entropy",         # new
+        "esp_active_fraction",     # new
     ]
 
 
+# ---------------------------------------------------------------------------
 # Report Schema
-
+# ---------------------------------------------------------------------------
 
 @dataclass
 class SessionReport:
@@ -330,8 +403,9 @@ class SessionReport:
         return asdict(self)
 
 
+# ---------------------------------------------------------------------------
 # Kafka Message Schemas
-
+# ---------------------------------------------------------------------------
 
 @dataclass
 class KafkaFeatureMessage:
@@ -378,8 +452,71 @@ class KafkaPipelineMetrics:
     pipeline_latency_ms: float = 0.0
 
 
-# Enumerations (use these string constants everywhere — no magic strings)
+# ---------------------------------------------------------------------------
+# Protocol model target — what Model 1 predicts
+# ---------------------------------------------------------------------------
 
+class ProtocolModelTarget:
+    """
+    Defines what the protocol identification model (Model 1) predicts.
+
+    Decision (V1): single model, combined config string as the target label.
+    The label is built as:  f"{mode}__{cipher_suite}__{dh_group}__{'pfs' if pfs_enabled else 'nopfs'}"
+    Example:                "tunnel__aes256_gcm__group19__pfs"
+
+    Why combined string over multi-output / 5 separate models:
+    - XGBoost multi-output is not natively supported — requires MultiOutputClassifier
+      wrapper, which loses predict_proba per output easily.
+    - 5 separate models × hyperparameter tuning = more moving parts on Day 3.
+    - The combined label space is small: 2 modes × 4 ciphers × 5 DH groups × 2 PFS
+      = 80 theoretical classes. In practice our capture matrix gives ~20 combos
+      (not all cross-products exist). XGBoost handles 20 classes fine.
+    - SHAP explanations work naturally on a single model.
+
+    V2 upgrade path (if needed): split into separate classifiers after V1 works.
+
+    Helper: use config_label() below to build the label consistently.
+    """
+
+    @staticmethod
+    def config_label(mode: str, cipher_suite: str, dh_group: str, pfs_enabled: bool) -> str:
+        """
+        Build the combined protocol model target label from its components.
+        Call this in both train.py (to build y) and inference.py (to decode output).
+
+        Example:
+            ProtocolModelTarget.config_label('tunnel', 'aes256_gcm', 'group19', True)
+            → 'tunnel__aes256_gcm__group19__pfs'
+        """
+        pfs_tag = "pfs" if pfs_enabled else "nopfs"
+        return f"{mode}__{cipher_suite}__{dh_group}__{pfs_tag}"
+
+    @staticmethod
+    def parse_config_label(label: str) -> dict:
+        """
+        Decode a combined label back into its component fields.
+        Used in inference.py after model.predict() to populate the response.
+
+        Example:
+            ProtocolModelTarget.parse_config_label('tunnel__aes256_gcm__group19__pfs')
+            → {'mode': 'tunnel', 'cipher_suite': 'aes256_gcm',
+               'dh_group': 'group19', 'pfs_enabled': True}
+        """
+        parts = label.split("__")
+        if len(parts) != 4:
+            raise ValueError(f"Malformed protocol model label: '{label}' — expected 4 parts")
+        mode, cipher_suite, dh_group, pfs_tag = parts
+        return {
+            "mode": mode,
+            "cipher_suite": cipher_suite,
+            "dh_group": dh_group,
+            "pfs_enabled": pfs_tag == "pfs",
+        }
+
+
+# ---------------------------------------------------------------------------
+# Enumerations (use these string constants everywhere — no magic strings)
+# ---------------------------------------------------------------------------
 
 class CipherSuite:
     AES128_CBC = "aes128_cbc"
