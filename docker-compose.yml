@@ -1,0 +1,144 @@
+networks:
+  ipsec-net:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"
+      com.docker.network.bridge.name: "br-ipsec"
+    ipam:
+      driver: default
+      config:
+        - subnet: ${IPSEC_SUBNET}
+  pipeline-net:
+    driver: bridge
+
+services:
+  initiator:
+    build: ./initiator
+    container_name: ipsec-initiator
+    hostname: initiator
+    networks:
+      ipsec-net:
+        ipv4_address: ${INITIATOR_IP}
+    cap_add:
+      - NET_ADMIN
+    env_file:
+      - .env
+    volumes:
+      - ./capture/configs/initiator:/etc/ipsec.d/generated:z
+    depends_on:
+      - responder
+    command: ["sleep", "infinity"]
+
+  responder:
+    build: ./responder
+    container_name: ipsec-responder
+    hostname: responder
+    networks:
+      ipsec-net:
+        ipv4_address: ${RESPONDER_IP}
+    cap_add:
+      - NET_ADMIN
+    env_file:
+      - .env
+    volumes:
+      - ./capture/configs/responder:/etc/ipsec.d/generated:z
+    command: ["sleep", "infinity"]
+
+  monitor:
+    build: ./monitor
+    container_name: ipsec-monitor
+    hostname: monitor
+    networks:
+      ipsec-net:
+        ipv4_address: ${MONITOR_IP}
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    env_file:
+      - .env
+    volumes:
+      - ./capture/pcaps:/data/capture:z
+    command: ["sleep", "infinity"]
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: pipeline-zookeeper
+    networks:
+      - pipeline-net
+    environment:
+      ZOOKEEPER_CLIENT_PORT: ${ZOOKEEPER_PORT}
+      ZOOKEEPER_TICK_TIME: 2000
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/${ZOOKEEPER_PORT}'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: pipeline-kafka
+    networks:
+      - pipeline-net
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "${KAFKA_EXTERNAL_PORT}:${KAFKA_EXTERNAL_PORT}"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:${ZOOKEEPER_PORT}
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:${KAFKA_INTERNAL_PORT},EXTERNAL://0.0.0.0:${KAFKA_EXTERNAL_PORT}
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:${KAFKA_INTERNAL_PORT},EXTERNAL://localhost:${KAFKA_EXTERNAL_PORT}
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:${KAFKA_INTERNAL_PORT}"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+
+  kafka-init:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: pipeline-kafka-init
+    networks:
+      - pipeline-net
+    depends_on:
+      kafka:
+        condition: service_healthy
+    env_file:
+      - .env
+    restart: "no"
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        for t in $$KAFKA_TOPIC_RAW_FEATURES $$KAFKA_TOPIC_INFERENCE_RESULTS $$KAFKA_TOPIC_ALERTS $$KAFKA_TOPIC_PIPELINE_METRICS; do
+          kafka-topics --bootstrap-server kafka:${KAFKA_INTERNAL_PORT} --create --if-not-exists --topic $$t --partitions ${KAFKA_PARTITIONS} --replication-factor 1
+        done
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: pipeline-elasticsearch
+    networks:
+      - pipeline-net
+    ports:
+      - "${ES_PORT}:9200"
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: ${ES_JAVA_OPTS}
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -qE '\"status\":\"(green|yellow)\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  es-data:

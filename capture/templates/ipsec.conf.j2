@@ -1,0 +1,19 @@
+config setup
+    charondebug="ike 1, knl 1, cfg 0"
+    uniqueids=no
+
+conn {{ conn_name }}
+    keyexchange=ikev2
+    type={{ mode }}
+    authby=secret
+    left={{ left_ip }}
+    right={{ right_ip }}
+    leftid={{ left_ip }}
+    rightid={{ right_ip }}
+    ike={{ ike_proposal }}!
+    esp={{ esp_proposal }}!
+    ikelifetime=3h
+    lifetime=1h
+    rekey=no
+    dpddelay=0
+    auto=add
