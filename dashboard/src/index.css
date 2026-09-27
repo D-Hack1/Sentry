@@ -1,0 +1,243 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --color-primary: #0ea5e9;
+  --color-primary-hover: #38bdf8;
+
+  --color-surface: #151923;
+  --color-surface-hover: #1e2433;
+  --color-surface-subcard: #0d111a;
+  --color-bg: #0b0f19;
+
+  --color-border-subtle: #1f2937;
+  --color-border-strong: #374151;
+
+  --color-severity-critical: #ef4444;
+  --color-severity-high: #f97316;
+  --color-severity-medium: #eab308;
+  --color-severity-low: #10b981;
+  --color-severity-info: #0ea5e9;
+
+  --animate-fade-in: fade-in 0.3s ease-out;
+  --animate-slide-in-right: slide-in-right 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-shimmer: shimmer 2s infinite linear;
+}
+
+/* ── Light theme overrides ── */
+:root[data-theme="light"] {
+  --color-primary: #4f46e5;
+  --color-primary-hover: #4338ca;
+
+  --color-surface: #ffffff;
+  --color-surface-hover: #f1f5f9;
+  --color-surface-subcard: #f8fafc;
+  --color-bg: #f8fafc;
+
+  --color-border-subtle: #cbd5e1;
+  --color-border-strong: #94a3b8;
+
+  --color-severity-critical: #dc2626;
+  --color-severity-high: #ea580c;
+  --color-severity-medium: #d97706;
+  --color-severity-low: #059669;
+  --color-severity-info: #2563eb;
+}
+
+/* ── Base layer ── */
+@layer base {
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    @apply bg-[var(--color-bg)] text-gray-200 font-sans antialiased overflow-hidden;
+  }
+
+  :root[data-theme="light"] body {
+    color: #0f172a;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #1f2937;
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #374151;
+  }
+  :root[data-theme="light"] ::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+  }
+  :root[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+  }
+}
+
+/* ── Subcard opacity fixes - 100% solid non-transparent subcards ── */
+.bg-black\/20 {
+  background-color: var(--color-surface-subcard) !important;
+  border-color: var(--color-border-subtle) !important;
+}
+
+/* ── Recharts Tooltip & Hover Cursor Fixes ── */
+.recharts-rectangle.recharts-tooltip-cursor {
+  fill: rgba(255, 255, 255, 0.04) !important;
+}
+
+:root[data-theme="light"] .recharts-rectangle.recharts-tooltip-cursor {
+  fill: rgba(0, 0, 0, 0.05) !important;
+}
+
+.recharts-default-tooltip {
+  background-color: #151923 !important;
+  border-color: #374151 !important;
+  border-radius: 8px !important;
+  color: #f3f4f6 !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5) !important;
+  padding: 8px 12px !important;
+}
+
+.recharts-tooltip-item {
+  color: #38bdf8 !important;
+  font-family: var(--font-mono);
+  font-size: 12px !important;
+}
+
+.recharts-tooltip-label {
+  color: #9ca3af !important;
+  font-weight: 600 !important;
+  margin-bottom: 4px !important;
+  font-size: 12px !important;
+}
+
+:root[data-theme="light"] .recharts-default-tooltip {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
+}
+
+:root[data-theme="light"] .recharts-tooltip-item {
+  color: #2563eb !important;
+}
+
+:root[data-theme="light"] .recharts-tooltip-label {
+  color: #475569 !important;
+}
+
+/* ── Light mode high-contrast text & surface overrides ── */
+:root[data-theme="light"] {
+  /* Text color fixes for high contrast black/dark-slate in light mode */
+  .text-gray-200,
+  .text-gray-300 {
+    color: #0f172a !important;
+  }
+
+  .text-gray-400 {
+    color: #334155 !important;
+  }
+
+  .text-gray-500 {
+    color: #475569 !important;
+  }
+
+  .text-gray-600 {
+    color: #64748b !important;
+  }
+
+  /* Keep contrast in nested panels and cards */
+  .bg-black\/20 {
+    background-color: #f1f5f9 !important;
+    border-color: #cbd5e1 !important;
+  }
+
+  .bg-gray-800 {
+    background-color: #e2e8f0 !important;
+    color: #0f172a !important;
+  }
+
+  .bg-gray-900 {
+    background-color: #cbd5e1 !important;
+    color: #0f172a !important;
+  }
+
+  /* Interactive hover color contrast */
+  .hover\:text-white:hover {
+    color: #0f172a !important;
+  }
+
+  .hover\:text-gray-200:hover {
+    color: #0f172a !important;
+  }
+}
+
+/* ── Component layer ── */
+@layer components {
+  .panel {
+    @apply bg-[var(--color-surface)] border border-[var(--color-border-subtle)] rounded-xl transition-all duration-150 ease-in-out relative overflow-hidden;
+  }
+
+  .panel-hover {
+    @apply hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-hover)] hover:-translate-y-0.5;
+  }
+
+  .badge-neon {
+    @apply px-2.5 py-1 rounded text-xs font-bold uppercase tracking-wider whitespace-nowrap shadow-none border-0;
+  }
+
+  /* 100% Solid opacity plain color boxes with high-contrast text */
+  .badge-critical { @apply text-white bg-red-600; }
+  .badge-high { @apply text-white bg-orange-600; }
+  .badge-medium { @apply text-slate-950 bg-amber-400 font-extrabold; }
+  .badge-low { @apply text-white bg-emerald-600; }
+  .badge-info { @apply text-white bg-sky-600; }
+  .badge-purple { @apply text-white bg-purple-600; }
+
+  :root[data-theme="light"] .badge-critical { @apply text-white bg-red-600; }
+  :root[data-theme="light"] .badge-high { @apply text-white bg-orange-600; }
+  :root[data-theme="light"] .badge-medium { @apply text-slate-950 bg-amber-400 font-extrabold; }
+  :root[data-theme="light"] .badge-low { @apply text-white bg-emerald-600; }
+  :root[data-theme="light"] .badge-info { @apply text-white bg-sky-600; }
+  :root[data-theme="light"] .badge-purple { @apply text-white bg-purple-600; }
+
+  .btn-primary {
+    @apply bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors;
+  }
+
+  .skeleton {
+    @apply bg-[#1f2937] overflow-hidden relative rounded-xl border border-transparent;
+  }
+  :root[data-theme="light"] .skeleton {
+    @apply bg-gray-200;
+  }
+
+  .skeleton::after {
+    content: "";
+    @apply absolute inset-0 -translate-x-full;
+    background-image: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
+    animation: shimmer 1.5s infinite;
+  }
+}
+
+/* ── Keyframes ── */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slide-in-right {
+  from { transform: translateX(20px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
+}
