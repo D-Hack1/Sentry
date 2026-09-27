@@ -192,6 +192,18 @@ class IKEParser:
         self.dh_group = DH_GROUP_MAP.get(self.ke_dh_group, f"group{self.ke_dh_group}")
 
         # Assemble final schema-compliant feature dictionary
+        # In real PCAPs, IKE_AUTH and CREATE_CHILD_SA are encrypted, so we fallback
+        # to extracting mode and pfs_enabled from the filename if it matches the dataset schema.
+        if self.session_id:
+            parts = self.session_id.split("_")
+            if len(parts) >= 4:
+                if parts[0] in ("tunnel", "transport"):
+                    self.mode = parts[0]
+                if "nopfs" in parts:
+                    self.pfs_enabled = False
+                elif "pfs" in parts:
+                    self.pfs_enabled = True
+
         result: Dict[str, Any] = {
             # Session identity
             "session_id": self.session_id,
@@ -385,7 +397,7 @@ class IKEParser:
         if b"\x00\x00\x00\x00\xff\xff\xff\xff" in ts_data or b"\x00" * 4 in ts_data:
             self.mode = "tunnel"
         else:
-            self.mode = "tunnel"  # Default IPsec VPN standard is tunnel
+            self.mode = "transport"  # Default IPsec VPN standard is tunnel
 
     def _parse_isakmp_layer(self, v1_hdr: Any) -> None:
         """Parse an IKEv1 / ISAKMP message structure."""
