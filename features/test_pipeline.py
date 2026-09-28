@@ -1,3 +1,8 @@
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from scapy.all import ESP, IP
 
 from features.pipeline import _burst_sizes, _esp_features, _matching_esp_packets, process_pcap
@@ -145,8 +150,11 @@ def test_esp_features_sort_combined_packets_before_iat_calculation():
     assert features["esp_iat_max"] == 1.0
 
 
-def test_burst_sizes_only_end_after_gaps_greater_than_100ms():
-    assert _burst_sizes([0.005, 0.05, 0.005]) == [3]
+def test_burst_sizes_follow_membership_and_gap_boundaries():
+    assert _burst_sizes([0.009, 0.009]) == [3]
+    assert _burst_sizes([0.005, 0.01, 0.005]) == [2, 2]
+    assert _burst_sizes([0.005, 0.05, 0.005]) == [2, 2]
+    assert _burst_sizes([0.005, 0.1, 0.005]) == [2, 2]
     assert _burst_sizes([0.005, 0.101, 0.005]) == [2, 2]
 
 

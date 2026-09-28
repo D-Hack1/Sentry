@@ -231,6 +231,10 @@ def _burst_sizes(inter_arrival_times: list[float]) -> list[int]:
             if current_size > 1:
                 burst_sizes.append(current_size)
             current_size = 1
+            continue
+        if current_size > 1:
+            burst_sizes.append(current_size)
+        current_size = 1
     if current_size > 1:
         burst_sizes.append(current_size)
     return burst_sizes
