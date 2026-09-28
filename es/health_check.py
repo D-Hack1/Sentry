@@ -19,18 +19,23 @@ def main():
         client = Elasticsearch(host)
         status = client.cluster.health(timeout="10s")["status"]
         exists = client.indices.exists(index=index)
+        stats = client.indices.stats(index=index) if exists else None
     except Exception as exc:
         print(f"FAIL: cannot reach Elasticsearch at {host}: {exc}")
         return 1
 
-    if status == "red":
-        print("FAIL: cluster status is red")
+    if status not in ("green", "yellow"):
+        print(f"FAIL: cluster status is {status}")
         return 1
     if not exists:
         print(f"FAIL: index {index} does not exist")
         return 1
 
-    print(f"OK: Elasticsearch at {host} status={status}, index {index} present")
+    total = stats["_all"]["primaries"]
+    doc_count = total["docs"]["count"]
+    size_bytes = total["store"]["size_in_bytes"]
+    print(f"OK: Elasticsearch at {host} status={status}")
+    print(f"OK: index {index} docs={doc_count} size_bytes={size_bytes}")
     return 0
 
 
