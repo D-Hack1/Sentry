@@ -56,7 +56,12 @@ def process_pcap(
         LOGGER.warning("ike_parse_failed: no capture timestamp for %s", pcap_path)
         return None
 
-    esp_packets = _matching_esp_packets(packets, ike_fields["esp_spi"])
+    esp_packets = _matching_esp_packets(
+        packets,
+        ike_fields["esp_spi"],
+        str(ike_fields["initiator_ip"]),
+        str(ike_fields["responder_ip"]),
+    )
     esp_features = _esp_features(
         esp_packets,
         str(ike_fields["initiator_ip"]),
@@ -83,14 +88,72 @@ def _read_packets(pcap_path: str | Path) -> list[Any]:
     return list(rdpcap(str(pcap_path)))
 
 
-def _matching_esp_packets(packets: list[Any], esp_spi: str) -> list[tuple[Any, Any]]:
+def _matching_esp_packets(
+    packets: list[Any],
+    esp_spi: str,
+    initiator_ip: str,
+    responder_ip: str,
+) -> list[tuple[Any, Any]]:
     from scapy.layers.ipsec import ESP
+    from scapy.layers.inet import IP
+    from scapy.layers.inet6 import IPv6
 
     expected_spi = _spi_as_int(esp_spi)
+    endpoint_packets = []
+    for packet in packets:
+        if not packet.haslayer(ESP):
+            continue
+        ip_layer = packet.getlayer(IP) or packet.getlayer(IPv6)
+        if ip_layer is None:
+            continue
+        endpoints = str(ip_layer.src), str(ip_layer.dst)
+        if endpoints not in {
+            (initiator_ip, responder_ip),
+            (responder_ip, initiator_ip),
+        }:
+            continue
+        endpoint_packets.append((packet, packet[ESP], endpoints))
+
+    primary_packets = [
+        item for item in endpoint_packets if int(item[1].spi) == expected_spi
+    ]
+    if not primary_packets:
+        return []
+
+    reverse_endpoints = (primary_packets[0][2][1], primary_packets[0][2][0])
+    primary_timestamps = [float(packet.time) for packet, _, _ in primary_packets]
+    primary_start = min(primary_timestamps)
+    primary_end = max(primary_timestamps)
+    reverse_packets: dict[int, list[tuple[Any, Any, tuple[str, str]]]] = {}
+    for item in endpoint_packets:
+        if item[2] == reverse_endpoints:
+            reverse_packets.setdefault(int(item[1].spi), []).append(item)
+
+    scores: dict[int, tuple[float, int]] = {}
+    for spi, packets_for_spi in reverse_packets.items():
+        timestamps = [float(packet.time) for packet, _, _ in packets_for_spi]
+        overlap_start = max(primary_start, min(timestamps))
+        overlap_end = min(primary_end, max(timestamps))
+        if overlap_start > overlap_end:
+            continue
+        scores[spi] = (
+            overlap_end - overlap_start,
+            sum(primary_start <= timestamp <= primary_end for timestamp in timestamps),
+        )
+
+    reverse_spi = None
+    if scores:
+        best_score = max(scores.values())
+        best_spis = [spi for spi, score in scores.items() if score == best_score]
+        if len(best_spis) == 1:
+            reverse_spi = best_spis[0]
+    selected_spis = {expected_spi}
+    if reverse_spi is not None:
+        selected_spis.add(reverse_spi)
     return [
         (packet, packet[ESP])
-        for packet in packets
-        if packet.haslayer(ESP) and int(packet[ESP].spi) == expected_spi
+        for packet, esp, _ in endpoint_packets
+        if int(esp.spi) in selected_spis
     ]
 
 
@@ -164,9 +227,13 @@ def _burst_sizes(inter_arrival_times: list[float]) -> list[int]:
         if interval < BURST_IAT_MAX:
             current_size += 1
             continue
-        if interval > BURST_GAP_MIN or current_size > 1:
+        if interval > BURST_GAP_MIN:
             if current_size > 1:
                 burst_sizes.append(current_size)
+            current_size = 1
+            continue
+        if current_size > 1:
+            burst_sizes.append(current_size)
         current_size = 1
     if current_size > 1:
         burst_sizes.append(current_size)

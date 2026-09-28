@@ -6,6 +6,8 @@
 SIH_2026_Aadi_Project_Context.md
 SIH_*_Aadi*.md
 *.tmp.md
+data/validation/
+pcaps.zip
 
 # Python
 __pycache__/
