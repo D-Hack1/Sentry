@@ -8,7 +8,7 @@ SIH_*_Aadi*.md
 *.tmp.md
 data/validation/
 pcaps.zip
-
+parquets.zip
 # Python
 __pycache__/
 *.py[cod]
