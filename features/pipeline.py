@@ -21,6 +21,14 @@ PARSER_FIELD_NAMES = tuple(
     and field.default is MISSING
     and field.default_factory is MISSING
 )
+UNOBSERVABLE_PARSER_FIELD_NAMES = frozenset(
+    {"mode", "pfs_enabled", "key_lifetime_sec"}
+)
+REQUIRED_PARSER_FIELD_NAMES = tuple(
+    field_name
+    for field_name in PARSER_FIELD_NAMES
+    if field_name not in UNOBSERVABLE_PARSER_FIELD_NAMES
+)
 DEFAULT_FEATURES_DIR = Path(__file__).resolve().parents[1] / "data" / "features"
 
 
@@ -35,7 +43,7 @@ def process_pcap(
 
     missing_fields = [
         field_name
-        for field_name in PARSER_FIELD_NAMES
+        for field_name in REQUIRED_PARSER_FIELD_NAMES
         if field_name not in ike_fields or ike_fields[field_name] is None
     ]
     if missing_fields:

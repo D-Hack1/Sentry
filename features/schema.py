@@ -86,8 +86,8 @@ class IPsecFeatureRow:
     # ------------------------------------------------------------------
     # 3. Inferred config  (from IKE negotiation — Aadi fills these)
     # ------------------------------------------------------------------
-    mode: str
-    """Tunnel or transport mode.
+    mode: Optional[str]
+    """Tunnel or transport mode, or None when Traffic Selectors are unavailable.
     Values: 'tunnel' | 'transport'
     Derived from Traffic Selector payloads: TS 0.0.0.0/0 → tunnel."""
 
@@ -104,12 +104,12 @@ class IPsecFeatureRow:
     Values: 'group2' | 'group5' | 'group14' | 'group19' | 'group20'
     Mapped from ke_dh_group by Gowri's ike_field_table.py."""
 
-    pfs_enabled: bool
-    """True if Perfect Forward Secrecy is active.
+    pfs_enabled: Optional[bool]
+    """True if Perfect Forward Secrecy is observed, or None when unavailable.
     Detected by presence of a KE payload in CREATE_CHILD_SA."""
 
-    key_lifetime_sec: int
-    """SA key lifetime in seconds. Default strongSwan: 3600 (1h) for IKEv2."""
+    key_lifetime_sec: Optional[int]
+    """SA key lifetime in seconds, or None when not observable from the PCAP."""
 
     esp_spi: str
     """ESP Security Parameter Index (hex) for the child SA.

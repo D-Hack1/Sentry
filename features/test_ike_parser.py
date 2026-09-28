@@ -31,6 +31,7 @@ def test_ikev2_parsing():
     trans_encr = ikev2.IKEv2_Transform(
         transform_type=1,
         transform_id=20,  # AES-GCM
+        length=12,
         key_length=256
     )
     trans_dh = ikev2.IKEv2_Transform(
@@ -92,7 +93,9 @@ def test_ikev2_parsing():
         assert features["initiator_port"] == 500
         assert features["responder_port"] == 500
         assert features["esp_spi"] == "0xc0ffee01"
-        assert features["mode"] == "tunnel"
+        assert features["mode"] is None
+        assert features["pfs_enabled"] is None
+        assert features["key_lifetime_sec"] is None
         assert features["ike_packet_count"] == 2
 
         # Verify compatibility with IPsecFeatureRow (Gowri/Ebin schema)
@@ -124,6 +127,25 @@ def test_ikev2_parsing():
         assert feature_row.cipher_suite == "aes256_gcm"
         print("[PASS] IKEv2 Dissection & Schema Compatibility Verified!")
 
+    finally:
+        if os.path.exists(temp_pcap):
+            os.remove(temp_pcap)
+
+
+def test_ikev2_gcm_without_key_length_remains_unknown():
+    temp_pcap = os.path.join(tempfile.gettempdir(), "test_ikev2_gcm_unknown.pcap")
+    transform = ikev2.IKEv2_Transform(transform_type=1, transform_id=20)
+    proposal = ikev2.IKEv2_Proposal(proposal=1, proto="IKE", SPIsize=0, trans=transform)
+    packet = (
+        IP(src="10.10.0.2", dst="10.10.0.3")
+        / UDP(sport=500, dport=500)
+        / ikev2.IKEv2(init_SPI=b"\x01" * 8, resp_SPI=b"\x00" * 8, exch_type=34)
+        / ikev2.IKEv2_SA(prop=proposal)
+    )
+    wrpcap(temp_pcap, [packet])
+
+    try:
+        assert parse_ike_pcap(temp_pcap)["cipher_suite"] == "aes_gcm"
     finally:
         if os.path.exists(temp_pcap):
             os.remove(temp_pcap)

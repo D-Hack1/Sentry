@@ -3,6 +3,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import pandas as pd
 from scapy.all import ESP, IP
 
 from features.pipeline import _burst_sizes, _esp_features, _matching_esp_packets, process_pcap
@@ -30,6 +31,31 @@ def _session_packets(count=5):
         )
         for index in range(count)
     ]
+
+
+def _ike_fields():
+    return {
+        "session_id": "dual_spi",
+        "initiator_ip": INITIATOR,
+        "responder_ip": RESPONDER,
+        "initiator_port": 500,
+        "responder_port": 500,
+        "ike_version": 2,
+        "ike_exchange_type": 34,
+        "ike_initiator_spi": "0x1",
+        "sa_proposal_count": 1,
+        "ke_dh_group": 14,
+        "ike_nat_traversal": False,
+        "ike_packet_count": 2,
+        "ike_handshake_duration": 1.0,
+        "mode": "tunnel",
+        "cipher_suite": "aes256_gcm",
+        "auth_algo": "aes_gcm",
+        "dh_group": "group14",
+        "pfs_enabled": False,
+        "key_lifetime_sec": 3600,
+        "esp_spi": hex(PRIMARY_SPI),
+    }
 
 
 def test_matching_esp_packets_includes_both_directional_spis_only():
@@ -160,28 +186,7 @@ def test_burst_sizes_follow_membership_and_gap_boundaries():
 
 def test_process_pcap_uses_both_directional_spis(monkeypatch, tmp_path):
     packets = _session_packets()
-    ike_fields = {
-        "session_id": "dual_spi",
-        "initiator_ip": INITIATOR,
-        "responder_ip": RESPONDER,
-        "initiator_port": 500,
-        "responder_port": 500,
-        "ike_version": 2,
-        "ike_exchange_type": 34,
-        "ike_initiator_spi": "0x1",
-        "sa_proposal_count": 1,
-        "ke_dh_group": 14,
-        "ike_nat_traversal": False,
-        "ike_packet_count": 2,
-        "ike_handshake_duration": 1.0,
-        "mode": "tunnel",
-        "cipher_suite": "aes256_gcm",
-        "auth_algo": "aes_gcm",
-        "dh_group": "group14",
-        "pfs_enabled": False,
-        "key_lifetime_sec": 3600,
-        "esp_spi": hex(PRIMARY_SPI),
-    }
+    ike_fields = _ike_fields()
     monkeypatch.setattr("features.pipeline._read_packets", lambda _: packets)
     monkeypatch.setattr("features.pipeline._write_parquet", lambda row, _: None)
 
@@ -189,3 +194,29 @@ def test_process_pcap_uses_both_directional_spis(monkeypatch, tmp_path):
 
     assert row is not None
     assert row["esp_packet_count"] == 5
+
+
+def test_process_pcap_preserves_unobservable_config_as_parquet_nulls(monkeypatch, tmp_path):
+    ike_fields = _ike_fields()
+    ike_fields.update(mode=None, pfs_enabled=None, key_lifetime_sec=None)
+    monkeypatch.setattr("features.pipeline._read_packets", lambda _: _session_packets())
+
+    row = process_pcap(tmp_path / "dual_spi.pcap", ike_fields, tmp_path)
+    parquet_row = pd.read_parquet(tmp_path / "dual_spi.parquet").iloc[0]
+
+    assert row is not None
+    assert row["mode"] is None
+    assert row["pfs_enabled"] is None
+    assert row["key_lifetime_sec"] is None
+    assert pd.isna(parquet_row["mode"])
+    assert pd.isna(parquet_row["pfs_enabled"])
+    assert pd.isna(parquet_row["key_lifetime_sec"])
+    assert len(parquet_row) == 51
+
+
+def test_process_pcap_rejects_missing_observable_parser_field(monkeypatch, tmp_path):
+    ike_fields = _ike_fields()
+    ike_fields["cipher_suite"] = None
+    monkeypatch.setattr("features.pipeline._read_packets", lambda _: _session_packets())
+
+    assert process_pcap(tmp_path / "missing_cipher.pcap", ike_fields, tmp_path) is None
