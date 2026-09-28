@@ -88,3 +88,5 @@ yarn-error.log*
 .pnpm-debug.log*
 convert_pcaps.py
 data/features/
+
+*.zip
