@@ -114,7 +114,7 @@ services:
     command:
       - |
         for t in $$KAFKA_TOPIC_RAW_FEATURES $$KAFKA_TOPIC_INFERENCE_RESULTS $$KAFKA_TOPIC_ALERTS $$KAFKA_TOPIC_PIPELINE_METRICS; do
-          kafka-topics --bootstrap-server kafka:${KAFKA_INTERNAL_PORT} --create --if-not-exists --topic $$t --partitions ${KAFKA_PARTITIONS} --replication-factor 1
+          kafka-topics --bootstrap-server kafka:${KAFKA_INTERNAL_PORT} --create --if-not-exists --topic $$t --partitions ${KAFKA_PARTITIONS} --replication-factor 1 --config retention.ms=${KAFKA_RETENTION_MS}
         done
 
   elasticsearch:

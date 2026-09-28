@@ -16,9 +16,9 @@ REQUIRED_TOPIC_VARS = (
 
 
 def main():
-    bootstrap = os.environ.get("KAFKA_BOOTSTRAP_SERVERS")
+    bootstrap = os.environ.get("KAFKA_BOOTSTRAP")
     if not bootstrap:
-        print("FAIL: KAFKA_BOOTSTRAP_SERVERS not set")
+        print("FAIL: KAFKA_BOOTSTRAP not set")
         return 1
 
     expected = []

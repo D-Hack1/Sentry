@@ -74,8 +74,44 @@ def render(role, mode, cipher, dh_group, pfs):
     )
 
 
+REQUIRED_CONF_KEYS = (
+    "keyexchange", "type", "authby", "left", "right",
+    "leftid", "rightid", "ike", "esp", "auto",
+)
+
+
+def validate_conf(conf):
+    lines = [l.strip() for l in conf.splitlines() if l.strip() and not l.strip().startswith("#")]
+    if not any(l.startswith(f"conn {CONN_NAME}") for l in lines):
+        sys.exit(f"invalid ipsec.conf: missing 'conn {CONN_NAME}' section")
+    found = {}
+    for l in lines:
+        if "=" in l:
+            key, _, value = l.partition("=")
+            found[key.strip()] = value.strip()
+    missing = [k for k in REQUIRED_CONF_KEYS if k not in found]
+    if missing:
+        sys.exit(f"invalid ipsec.conf: missing keys {missing}")
+    empty = [k for k in REQUIRED_CONF_KEYS if not found[k]]
+    if empty:
+        sys.exit(f"invalid ipsec.conf: empty values for {empty}")
+
+
+def validate_secrets(secrets, left_ip, right_ip):
+    if not secrets.strip():
+        sys.exit("invalid ipsec.secrets: file is empty")
+    if left_ip not in secrets or right_ip not in secrets:
+        sys.exit("invalid ipsec.secrets: missing expected peer IPs")
+    if "PSK" not in secrets:
+        sys.exit("invalid ipsec.secrets: missing PSK entry")
+
+
 def write_config(role, out_dir, mode, cipher, dh_group, pfs):
     conf, secrets = render(role, mode, cipher, dh_group, pfs)
+    params = build_params(role, mode, cipher, dh_group, pfs)
+    validate_conf(conf)
+    validate_secrets(secrets, params["left_ip"], params["right_ip"])
+
     target = Path(out_dir) / role
     target.mkdir(parents=True, exist_ok=True)
     (target / "ipsec.conf").write_text(conf)
