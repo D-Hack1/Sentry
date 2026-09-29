@@ -114,10 +114,13 @@ def write_config(role, out_dir, mode, cipher, dh_group, pfs):
 
     target = Path(out_dir) / role
     target.mkdir(parents=True, exist_ok=True)
-    (target / "ipsec.conf").write_text(conf)
+
+    (target / "ipsec.conf").write_text(conf, newline="\n")
+
     secrets_path = target / "ipsec.secrets"
-    secrets_path.write_text(secrets)
+    secrets_path.write_text(secrets, newline="\n")
     secrets_path.chmod(0o600)
+
     return target
 
 

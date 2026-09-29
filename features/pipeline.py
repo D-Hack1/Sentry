@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import MISSING, fields
 from math import log2
 from pathlib import Path
 from statistics import fmean, pstdev
@@ -14,12 +13,23 @@ LOGGER = logging.getLogger(__name__)
 ESP_FIELD_NAMES = tuple(IPsecFeatureRow.ESP_FEATURE_NAMES)
 BURST_IAT_MAX = 0.01
 BURST_GAP_MIN = 0.1
-PARSER_FIELD_NAMES = tuple(
-    field.name
-    for field in fields(IPsecFeatureRow)
-    if field.name not in {*ESP_FIELD_NAMES, "session_id", "ts", "duration"}
-    and field.default is MISSING
-    and field.default_factory is MISSING
+PARSER_FIELD_NAMES = (
+    "initiator_ip",
+    "responder_ip",
+    "initiator_port",
+    "responder_port",
+    "ike_version",
+    "ike_exchange_type",
+    "ike_initiator_spi",
+    "sa_proposal_count",
+    "ke_dh_group",
+    "ike_nat_traversal",
+    "ike_packet_count",
+    "ike_handshake_duration",
+    "cipher_suite",
+    "auth_algo",
+    "dh_group",
+    "esp_spi",
 )
 UNOBSERVABLE_PARSER_FIELD_NAMES = frozenset(
     {"mode", "pfs_enabled", "key_lifetime_sec"}
@@ -80,11 +90,14 @@ def process_pcap(
         for field_name in PARSER_FIELD_NAMES
     }
     row_data.update(
-        session_id=session_id,
-        ts=float(ts),
-        duration=float(duration),
-        **esp_features,
-    )
+    session_id=session_id,
+    ts=float(ts),
+    duration=float(duration),
+    mode=ike_fields.get("mode"),
+    pfs_enabled=ike_fields.get("pfs_enabled"),
+    key_lifetime_sec=ike_fields.get("key_lifetime_sec"),
+    **esp_features,
+)
     row = IPsecFeatureRow(**row_data).to_dict()
     _write_parquet(row, output_dir or DEFAULT_FEATURES_DIR)
     return row
