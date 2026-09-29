@@ -1,0 +1,64 @@
+{
+  "model_type": "IsolationForest",
+  "random_state": 42,
+  "n_estimators": 300,
+  "contamination": 0.05,
+  "max_samples": "auto",
+  "split": {
+    "method": "session_level",
+    "train_ratio": 0.7,
+    "validation_ratio": 0.15,
+    "test_ratio": 0.15
+  },
+  "dataset": {
+    "total_windows": 851,
+    "total_sessions": 100
+  },
+  "train": {
+    "windows": 591,
+    "sessions": 70
+  },
+  "validation": {
+    "windows": 131,
+    "sessions": 15
+  },
+  "test": {
+    "windows": 129,
+    "sessions": 15
+  },
+  "features": [
+    "pkt_size_mean",
+    "pkt_size_std",
+    "pkt_size_min",
+    "pkt_size_max",
+    "pkt_size_p25",
+    "pkt_size_p50",
+    "pkt_size_p75",
+    "pkt_size_p90",
+    "pkt_size_p95",
+    "iat_mean",
+    "iat_std",
+    "iat_min",
+    "iat_max",
+    "iat_p25",
+    "iat_p50",
+    "iat_p75",
+    "iat_p90",
+    "iat_p95",
+    "inbound_packets",
+    "outbound_packets",
+    "inbound_bytes",
+    "outbound_bytes",
+    "packet_ratio",
+    "byte_ratio",
+    "packets_per_sec",
+    "bytes_per_sec",
+    "burst_count",
+    "mean_burst_size",
+    "max_burst_size",
+    "burst_fraction",
+    "packet_size_entropy",
+    "iat_entropy",
+    "active_time_fraction"
+  ]
+}

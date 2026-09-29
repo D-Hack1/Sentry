@@ -1,0 +1,397 @@
+[
+  {
+    "session_id": "session_file_transfer_adaptive_transfer_1277929174",
+    "traffic_class": "file_transfer",
+    "profile": "adaptive_transfer",
+    "seed": 1277929174,
+    "duration_sec": 60.0,
+    "start_delay_sec": 4.96,
+    "generation_params": {
+      "profile": "adaptive_transfer",
+      "target": "10.10.0.3:80",
+      "file_path": "/random_50mb.bin",
+      "backing_file_size": 52428800,
+      "phases": [
+        {
+          "name": "adaptive_transfer",
+          "duration_sec": 7.78,
+          "params": {
+            "transfer_count": 10,
+            "size_min_mb": 2.0,
+            "size_max_mb": 15.0,
+            "iat_mean_ms": 647.4730965237995,
+            "jitter_ratio": 0.33604953199311494
+          }
+        },
+        {
+          "name": "adaptive_idle",
+          "duration_sec": 3.01,
+          "params": {
+            "req_rate_per_sec": 0.0
+          }
+        },
+        {
+          "name": "adaptive_transfer",
+          "duration_sec": 5.51,
+          "params": {
+            "transfer_count": 4,
+            "size_min_mb": 0.25,
+            "size_max_mb": 4.0,
+            "iat_mean_ms": 1003.0732517723025,
+            "jitter_ratio": 0.5305384441901586
+          }
+        },
+        {
+          "name": "adaptive_idle",
+          "duration_sec": 3.65,
+          "params": {
+            "req_rate_per_sec": 0.0
+          }
+        },
+        {
+          "name": "adaptive_transfer",
+          "duration_sec": 5.46,
+          "params": {
+            "transfer_count": 5,
+            "size_min_mb": 2.0,
+            "size_max_mb": 15.0,
+            "iat_mean_ms": 531.8463312700434,
+            "jitter_ratio": 0.4486029277273639
+          }
+        },
+        {
+          "name": "adaptive_idle",
+          "duration_sec": 6.95,
+          "params": {
+            "req_rate_per_sec": 0.0
+          }
+        },
+        {
+          "name": "adaptive_transfer",
+          "duration_sec": 6.04,
+          "params": {
+            "transfer_count": 7,
+            "size_min_mb": 0.25,
+            "size_max_mb": 4.0,
+            "iat_mean_ms": 990.1247668995002,
+            "jitter_ratio": 0.2637623915190589
+          }
+        },
+        {
+          "name": "adaptive_idle",
+          "duration_sec": 4.33,
+          "params": {
+            "req_rate_per_sec": 0.0
+          }
+        },
+        {
+          "name": "adaptive_transfer",
+          "duration_sec": 7.01,
+          "params": {
+            "transfer_count": 7,
+            "size_min_mb": 2.0,
+            "size_max_mb": 15.0,
+            "iat_mean_ms": 569.2192708052974,
+            "jitter_ratio": 0.5776910678477049
+          }
+        },
+        {
+          "name": "adaptive_idle",
+          "duration_sec": 7.46,
+          "params": {
+            "req_rate_per_sec": 0.0
+          }
+        },
+        {
+          "name": "adaptive_transfer",
+          "duration_sec": 2.8,
+          "params": {
+            "transfer_count": 6,
+            "size_min_mb": 2.0,
+            "size_max_mb": 15.0,
+            "iat_mean_ms": 678.3048715974961,
+            "jitter_ratio": 0.16196905779063295
+          }
+        }
+      ]
+    },
+    "vpn_config": {},
+    "pcap": null,
+    "status": "valid",
+    "failure_reason": null,
+    "packets_sent": 184184,
+    "bytes_sent": 261511186,
+    "timestamp": "2026-09-29T18:48:07.634727+00:00"
+  },
+  {
+    "session_id": "session_file_transfer_steady_transfer_631423494",
+    "traffic_class": "file_transfer",
+    "profile": "steady_transfer",
+    "seed": 631423494,
+    "duration_sec": 60.0,
+    "start_delay_sec": 3.49,
+    "generation_params": {
+      "profile": "steady_transfer",
+      "target": "10.10.0.3:80",
+      "file_path": "/random_50mb.bin",
+      "backing_file_size": 52428800,
+      "phases": [
+        {
+          "name": "steady_transfer",
+          "duration_sec": 11.32,
+          "params": {
+            "transfer_count": 3,
+            "size_min_mb": 6.874861617634518,
+            "size_max_mb": 15.192395442971723,
+            "iat_mean_ms": 805.486609386011,
+            "jitter_ratio": 0.10091865526852883
+          }
+        },
+        {
+          "name": "steady_transfer_pause",
+          "duration_sec": 2.09,
+          "params": {
+            "req_rate_per_sec": 0.0
+          }
+        },
+        {
+          "name": "steady_transfer",
+          "duration_sec": 11.99,
+          "params": {
+            "transfer_count": 2,
+            "size_min_mb": 2.422879143004744,
+            "size_max_mb": 18.52407725164934,
+            "iat_mean_ms": 1083.2278731006113,
+            "jitter_ratio": 0.2935776198839432
+          }
+        },
+        {
+          "name": "steady_transfer_pause",
+          "duration_sec": 3.42,
+          "params": {
+            "req_rate_per_sec": 0.0
+          }
+        },
+        {
+          "name": "steady_transfer",
+          "duration_sec": 13.56,
+          "params": {
+            "transfer_count": 4,
+            "size_min_mb": 4.858928274579727,
+            "size_max_mb": 16.221611073754005,
+            "iat_mean_ms": 569.631404221337,
+            "jitter_ratio": 0.21819124953782876
+          }
+        },
+        {
+          "name": "steady_transfer_pause",
+          "duration_sec": 5.48,
+          "params": {
+            "req_rate_per_sec": 0.0
+          }
+        },
+        {
+          "name": "steady_transfer",
+          "duration_sec": 12.15,
+          "params": {
+            "transfer_count": 6,
+            "size_min_mb": 6.366005030631108,
+            "size_max_mb": 13.326095604309334,
+            "iat_mean_ms": 693.0490890210475,
+            "jitter_ratio": 0.13563275906347086
+          }
+        }
+      ]
+    },
+    "vpn_config": {},
+    "pcap": null,
+    "status": "valid",
+    "failure_reason": null,
+    "packets_sent": 107999,
+    "bytes_sent": 153347733,
+    "timestamp": "2026-09-29T18:48:13.018096+00:00"
+  },
+  {
+    "session_id": "session_file_transfer_steady_transfer_353682686",
+    "traffic_class": "file_transfer",
+    "profile": "steady_transfer",
+    "seed": 353682686,
+    "duration_sec": 60.0,
+    "start_delay_sec": 1.11,
+    "generation_params": {
+      "profile": "steady_transfer",
+      "target": "10.10.0.3:80",
+      "file_path": "/random_50mb.bin",
+      "backing_file_size": 52428800,
+      "phases": [
+        {
+          "name": "steady_transfer",
+          "duration_sec": 15.79,
+          "params": {
+            "transfer_count": 6,
+            "size_min_mb": 2.6221680870389004,
+            "size_max_mb": 13.312824571898325,
+            "iat_mean_ms": 664.5744649049982,
+            "jitter_ratio": 0.20497724775039022
+          }
+        },
+        {
+          "name": "steady_transfer_pause",
+          "duration_sec": 3.24,
+          "params": {
+            "req_rate_per_sec": 0.0
+          }
+        },
+        {
+          "name": "steady_transfer",
+          "duration_sec": 9.97,
+          "params": {
+            "transfer_count": 4,
+            "size_min_mb": 7.413969938137818,
+            "size_max_mb": 13.767119019925879,
+            "iat_mean_ms": 471.0224872851487,
+            "jitter_ratio": 0.284455277586691
+          }
+        },
+        {
+          "name": "steady_transfer_pause",
+          "duration_sec": 5.75,
+          "params": {
+            "req_rate_per_sec": 0.0
+          }
+        },
+        {
+          "name": "steady_transfer",
+          "duration_sec": 12.54,
+          "params": {
+            "transfer_count": 2,
+            "size_min_mb": 7.273129485484729,
+            "size_max_mb": 14.314880321514362,
+            "iat_mean_ms": 1006.8170152759091,
+            "jitter_ratio": 0.18366782647692048
+          }
+        },
+        {
+          "name": "steady_transfer_pause",
+          "duration_sec": 4.44,
+          "params": {
+            "req_rate_per_sec": 0.0
+          }
+        },
+        {
+          "name": "steady_transfer",
+          "duration_sec": 8.27,
+          "params": {
+            "transfer_count": 5,
+            "size_min_mb": 2.5590387449779417,
+            "size_max_mb": 17.499286235344165,
+            "iat_mean_ms": 591.8719013700306,
+            "jitter_ratio": 0.1243177871032998
+          }
+        }
+      ]
+    },
+    "vpn_config": {},
+    "pcap": null,
+    "status": "valid",
+    "failure_reason": null,
+    "packets_sent": 124983,
+    "bytes_sent": 177466938,
+    "timestamp": "2026-09-29T18:48:16.631029+00:00"
+  },
+  {
+    "session_id": "session_file_transfer_intermittent_transfer_1331681835",
+    "traffic_class": "file_transfer",
+    "profile": "intermittent_transfer",
+    "seed": 1331681835,
+    "duration_sec": 60.0,
+    "start_delay_sec": 3.01,
+    "generation_params": {
+      "profile": "intermittent_transfer",
+      "target": "10.10.0.3:80",
+      "file_path": "/random_50mb.bin",
+      "backing_file_size": 52428800,
+      "phases": [
+        {
+          "name": "intermittent_transfer",
+          "duration_sec": 5.09,
+          "params": {
+            "transfer_count": 3,
+            "size_min_mb": 2.0058667549283102,
+            "size_max_mb": 14.432263240092356,
+            "iat_mean_ms": 1523.170595398144,
+            "jitter_ratio": 0.39815931143007965
+          }
+        },
+        {
+          "name": "long_user_idle",
+          "duration_sec": 16.17,
+          "params": {
+            "req_rate_per_sec": 0.0
+          }
+        },
+        {
+          "name": "intermittent_transfer",
+          "duration_sec": 4.39,
+          "params": {
+            "transfer_count": 3,
+            "size_min_mb": 1.7770789032598597,
+            "size_max_mb": 10.76547134932261,
+            "iat_mean_ms": 690.8506333835816,
+            "jitter_ratio": 0.22315812779859098
+          }
+        },
+        {
+          "name": "long_user_idle",
+          "duration_sec": 8.05,
+          "params": {
+            "req_rate_per_sec": 0.0
+          }
+        },
+        {
+          "name": "intermittent_transfer",
+          "duration_sec": 2.62,
+          "params": {
+            "transfer_count": 1,
+            "size_min_mb": 4.571540909331489,
+            "size_max_mb": 10.024931809498993,
+            "iat_mean_ms": 1037.976506345823,
+            "jitter_ratio": 0.398892435128839
+          }
+        },
+        {
+          "name": "long_user_idle",
+          "duration_sec": 11.74,
+          "params": {
+            "req_rate_per_sec": 0.0
+          }
+        },
+        {
+          "name": "intermittent_transfer",
+          "duration_sec": 2.06,
+          "params": {
+            "transfer_count": 4,
+            "size_min_mb": 2.4128812924683953,
+            "size_max_mb": 16.13652996593401,
+            "iat_mean_ms": 1470.405219586526,
+            "jitter_ratio": 0.499488370348664
+          }
+        },
+        {
+          "name": "long_user_idle",
+          "duration_sec": 9.88,
+          "params": {
+            "req_rate_per_sec": 0.0
+          }
+        }
+      ]
+    },
+    "vpn_config": {},
+    "pcap": null,
+    "status": "valid",
+    "failure_reason": null,
+    "packets_sent": 79463,
+    "bytes_sent": 112830152,
+    "timestamp": "2026-09-29T18:48:19.897545+00:00"
+  }
+]
