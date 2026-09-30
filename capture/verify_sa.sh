@@ -3,7 +3,7 @@ set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 set -a
-source "$ROOT/.env"
+source <(sed -E 's/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/\1="\2"/' "$ROOT/.env")
 set +a
 
 TIMEOUT="${1:-$SA_TIMEOUT}"

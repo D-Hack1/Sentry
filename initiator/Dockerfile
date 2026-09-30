@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl=7.88.1-10+deb12u15 \
     wget=1.21.3-1+deb12u1 \
     ffmpeg=7:5.1.9-0+deb12u1 \
+    python3=3.11.2-1+b1 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /etc/ipsec.d/generated /data/capture

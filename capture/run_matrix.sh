@@ -4,11 +4,12 @@ set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 set -a
-source "$ROOT/.env"
+source <(sed -E 's/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/\1="\2"/' "$ROOT/.env")
 set +a
 
 PCAP_ABS="$ROOT/$PCAP_DIR"
-mkdir -p "$PCAP_ABS"
+MANIFEST_ABS="$ROOT/capture/manifests"
+mkdir -p "$PCAP_ABS" "$MANIFEST_ABS"
 
 CAPTURE_FILTER="esp or udp port 500 or udp port 4500"
 CONN="sentry"
@@ -49,11 +50,31 @@ start_ipsec() {
     return 1
 }
 
-start_servers() {
-    docker exec -d "$RESPONDER_CONTAINER" iperf3 -s
-    docker exec -d "$RESPONDER_CONTAINER" busybox httpd -f -p 80 -h /srv/www
-    docker exec -d "$RESPONDER_CONTAINER" sh -c 'while true; do busybox nc -lu -p 5004 >/dev/null; done'
-    docker exec -d "$RESPONDER_CONTAINER" sh -c 'while true; do busybox nc -lu -p 5006 >/dev/null; done'
+start_traffic_server() {
+    local traffic="$1"
+    case "$traffic" in
+        web)
+            docker exec -d "$RESPONDER_CONTAINER" sh -c \
+                'python3 /opt/traffic/web_traffic.py --server-mode --bind-host 0.0.0.0 --target-port 80 & echo $! > /tmp/srv.pid'
+            ;;
+        file_transfer)
+            docker exec -d "$RESPONDER_CONTAINER" sh -c \
+                'nginx -c /etc/nginx-file-transfer.conf -g "daemon off;" & echo $! > /tmp/srv.pid'
+            ;;
+        voip)
+            docker exec -d "$RESPONDER_CONTAINER" sh -c \
+                'python3 /opt/traffic/voip_sim.py --server-mode --bind-host 0.0.0.0 --target-port 5004 & echo $! > /tmp/srv.pid'
+            ;;
+        video_stream)
+            docker exec -d "$RESPONDER_CONTAINER" sh -c \
+                'python3 /opt/traffic/video_stream.py --server-mode --bind-host 0.0.0.0 --target-port 8080 & echo $! > /tmp/srv.pid'
+            ;;
+    esac
+    sleep 1
+}
+
+stop_traffic_server() {
+    docker exec "$RESPONDER_CONTAINER" sh -c 'kill $(cat /tmp/srv.pid) 2>/dev/null; rm -f /tmp/srv.pid' >/dev/null 2>&1
 }
 
 stop_all_captures() {
@@ -72,25 +93,32 @@ start_capture() {
 }
 
 generate_traffic() {
-    local traffic="$1" t="$TRAFFIC_SECONDS"
+    local traffic="$1" name="$2" t="$TRAFFIC_SECONDS"
+    local manifest="/data/manifest/$name.json"
     case "$traffic" in
         icmp)
-            docker exec "$INITIATOR_CONTAINER" ping -c $((t * 5)) -i 0.2 "$RESPONDER_IP" >/dev/null 2>&1
+            docker exec "$INITIATOR_CONTAINER" python3 /opt/traffic/icmp_flood.py \
+                --target-host "$RESPONDER_IP" --duration "$t" >/dev/null 2>&1
             ;;
         web)
-            docker exec "$INITIATOR_CONTAINER" bash -c \
-                "end=\$((SECONDS + $t)); while [ \$SECONDS -lt \$end ]; do curl -s -o /dev/null http://$RESPONDER_IP/index.html; sleep 0.4; done"
+            docker exec "$INITIATOR_CONTAINER" python3 /opt/traffic/web_traffic.py \
+                --target-host "$RESPONDER_IP" --target-port 80 --duration "$t" --start-delay 0 \
+                --session-id "$name" --manifest-out "$manifest" >/dev/null 2>&1
             ;;
         file_transfer)
-            docker exec "$INITIATOR_CONTAINER" iperf3 -c "$RESPONDER_IP" -t "$t" -b 20M >/dev/null 2>&1
+            docker exec "$INITIATOR_CONTAINER" python3 /opt/traffic/file_transfer.py \
+                --target-host "$RESPONDER_IP" --target-port 80 --duration "$t" --start-delay 0 \
+                --session-id "$name" --manifest-out "$manifest" >/dev/null 2>&1
             ;;
         voip)
-            docker exec "$INITIATOR_CONTAINER" ffmpeg -loglevel error -re -f lavfi -i "sine=frequency=440:duration=$t" \
-                -ar 8000 -ac 1 -acodec pcm_mulaw -f rtp "rtp://$RESPONDER_IP:5004" >/dev/null 2>&1
+            docker exec "$INITIATOR_CONTAINER" python3 /opt/traffic/voip_sim.py \
+                --target-host "$RESPONDER_IP" --target-port 5004 --duration "$t" --start-delay 0 \
+                --session-id "$name" --manifest-out "$manifest" >/dev/null 2>&1
             ;;
         video_stream)
-            docker exec "$INITIATOR_CONTAINER" ffmpeg -loglevel error -re -f lavfi -i "testsrc=size=640x360:rate=25:duration=$t" \
-                -c:v libx264 -preset ultrafast -tune zerolatency -f mpegts "udp://$RESPONDER_IP:5006?pkt_size=1316" >/dev/null 2>&1
+            docker exec "$INITIATOR_CONTAINER" python3 /opt/traffic/video_stream.py \
+                --target-host "$RESPONDER_IP" --target-port 8080 --duration "$t" --start-delay 0 \
+                --session-id "$name" --manifest-out "$manifest" >/dev/null 2>&1
             ;;
     esac
 }
@@ -120,10 +148,11 @@ run_combo() {
     fi
 
     start_capture "$name"
+    start_traffic_server "$traffic"
     docker exec "$INITIATOR_CONTAINER" ipsec up "$CONN" >/dev/null 2>&1
 
     if bash "$ROOT/capture/verify_sa.sh" "$SA_TIMEOUT"; then
-        generate_traffic "$traffic"
+        generate_traffic "$traffic" "$name"
         docker exec "$INITIATOR_CONTAINER" ipsec down "$CONN" >/dev/null 2>&1
         sleep 1
         stop_all_captures
@@ -134,10 +163,9 @@ run_combo() {
         failed+=("$name")
     fi
 
+    stop_traffic_server
     stop_ipsec
 }
-
-start_servers
 
 combos=()
 for mode in "${MODES[@]}"; do

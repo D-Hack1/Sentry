@@ -68,6 +68,7 @@ data/raw/*.pcapng
 *.pcapng
 capture/pcaps/
 capture/configs/
+capture/manifests/
 
 # Test outputs & temporary files
 data/test_*

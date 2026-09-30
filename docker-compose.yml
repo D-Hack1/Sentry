@@ -25,6 +25,8 @@ services:
       - .env
     volumes:
       - ./capture/configs/initiator:/etc/ipsec.d/generated:z
+      - ./traffic:/opt/traffic:ro,z
+      - ./capture/manifests:/data/manifest:z
     depends_on:
       - responder
     command: ["sleep", "infinity"]
@@ -42,6 +44,7 @@ services:
       - .env
     volumes:
       - ./capture/configs/responder:/etc/ipsec.d/generated:z
+      - ./traffic:/opt/traffic:ro,z
     command: ["sleep", "infinity"]
 
   monitor:
