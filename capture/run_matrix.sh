@@ -2,10 +2,14 @@
 set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$ROOT"
-set -a
-source "$ROOT/.env"
-set +a
+cd "$ROOT" || exit 1
+# shellcheck source=../scripts/env.sh
+source "$ROOT/scripts/env.sh"
+load_env_file "$ROOT/.env" || { echo "missing $ROOT/.env (cp .env.example .env)" >&2; exit 1; }
+
+# gen_config.py needs jinja2 + python-dotenv: prefer the project venv (created by start.sh)
+PY="${PYTHON:-$ROOT/.venv/bin/python}"
+[ -x "$PY" ] || PY=python3
 
 PCAP_ABS="$ROOT/$PCAP_DIR"
 mkdir -p "$PCAP_ABS"
@@ -109,7 +113,7 @@ run_combo() {
     fi
     echo "[$total] $name"
 
-    python3 "$ROOT/capture/gen_config.py" --mode "$mode" --cipher "$cipher" --dh-group "$dh" --pfs "$pfs" || { failed+=("$name"); return; }
+    "$PY" "$ROOT/capture/gen_config.py" --mode "$mode" --cipher "$cipher" --dh-group "$dh" --pfs "$pfs" || { failed+=("$name"); return; }
 
     stop_ipsec
     apply_config

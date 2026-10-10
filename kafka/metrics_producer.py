@@ -1,3 +1,13 @@
+"""
+kafka/metrics_producer.py — every 2 s, publish pipeline throughput to the
+'pipeline-metrics' topic (streamed to the dashboard by GET /metrics):
+
+    {"ts", "sessions_per_sec", "bytes_per_sec", "kafka_queue_depth", "pipeline_latency_ms"}
+
+Usage (run by path — `kafka` is also the kafka-python import name):
+    python kafka/metrics_producer.py [--bootstrap localhost:29092] [--interval 2]
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -5,15 +15,24 @@ import json
 import logging
 import os
 import signal
+import statistics
 import sys
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
-from kafka import KafkaConsumer, KafkaProducer, TopicPartition
-from kafka.admin import KafkaAdminClient
-from kafka.errors import KafkaError, KafkaConnectionError
+from dotenv import load_dotenv
 
-BOOTSTRAP_SERVERS: str = os.getenv("KAFKA_BOOTSTRAP", "localhost:9092")
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+
+from kafka import KafkaConsumer, KafkaProducer, TopicPartition  # noqa: E402  (kafka-python)
+from kafka.admin import KafkaAdminClient  # noqa: E402
+from kafka.errors import KafkaError, KafkaConnectionError  # noqa: E402
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from features.kafka_serde import JsonValueSerializer, SafeJsonDeserializer  # noqa: E402
+
+BOOTSTRAP_SERVERS: str = os.getenv("KAFKA_BOOTSTRAP", "localhost:29092")
 TOPIC_RAW_FEATURES: str = os.getenv("KAFKA_TOPIC_RAW_FEATURES", "raw-features")
 TOPIC_INFERENCE: str = os.getenv("KAFKA_TOPIC_INFERENCE_RESULTS", "inference-results")
 TOPIC_METRICS: str = os.getenv("KAFKA_TOPIC_PIPELINE_METRICS", "pipeline-metrics")
@@ -68,7 +87,7 @@ def _make_tail_consumer(bootstrap, topic, value_deserializer):
 def _make_producer(bootstrap):
     return _retry(lambda: KafkaProducer(
         bootstrap_servers=bootstrap,
-        value_serializer=lambda v: json.dumps(v, default=str).encode("utf-8"),
+        value_serializer=JsonValueSerializer(),
         acks="all",
         retries=5,
         retry_backoff_ms=200,
@@ -113,12 +132,14 @@ def _sample_latency(latency_consumer, timeout_ms):
     per_partition = latency_consumer.poll(timeout_ms=timeout_ms)
     for records in per_partition.values():
         for record in records:
+            if not isinstance(record.value, dict):
+                continue
             latency = record.value.get("pipeline_latency_ms")
             if latency is not None:
                 values.append(float(latency))
     if not values:
         return 0.0
-    return sum(values) / len(values)
+    return float(statistics.median(values))
 
 
 class _Shutdown(Exception):
@@ -135,9 +156,9 @@ def run_metrics_loop(bootstrap=BOOTSTRAP_SERVERS, interval=INTERVAL_SEC):
 
     admin = _make_admin(bootstrap)
     lag_consumer = _make_lag_consumer(bootstrap)
-    sample_consumer = _make_tail_consumer(bootstrap, TOPIC_RAW_FEATURES, lambda b: b)
+    sample_consumer = _make_tail_consumer(bootstrap, TOPIC_RAW_FEATURES, None)  # raw bytes: we only count them
     latency_consumer = _make_tail_consumer(
-        bootstrap, TOPIC_INFERENCE, lambda b: json.loads(b.decode("utf-8"))
+        bootstrap, TOPIC_INFERENCE, SafeJsonDeserializer()
     )
     producer = _make_producer(bootstrap)
 
@@ -204,8 +225,9 @@ def main():
         level=logging.INFO,
         stream=sys.stdout,
     )
+    logging.getLogger("kafka").setLevel(logging.WARNING)
 
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="Publish pipeline throughput metrics every interval")
     parser.add_argument("--bootstrap", default=BOOTSTRAP_SERVERS)
     parser.add_argument("--interval", type=float, default=INTERVAL_SEC)
     args = parser.parse_args()

@@ -9,9 +9,12 @@ Consumes the 'raw-features' Kafka topic. For each message:
   6. If security_score < 50 → publish to 'alerts'
   7. On any error → dead-letter log, never crash
 
-Standalone usage:
-    python -m kafka.consumer [--bootstrap localhost:9092] [--api-url http://localhost:8000]
+Usage (run by path — `kafka` is also the kafka-python import name):
+    python kafka/consumer.py [--bootstrap localhost:29092] [--api-url http://localhost:8000]
 
+Transient API failures (connection refused, timeouts, 5xx) are retried with
+backoff so messages are not lost while the API restarts; 4xx responses and
+exhausted retries go to the dead-letter log.
 """
 
 from __future__ import annotations
@@ -20,17 +23,28 @@ import argparse
 import json
 import logging
 import os
+import signal
 import sys
 import time
 from collections import deque
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Deque, Optional
 
-import httpx
-from kafka import KafkaConsumer
-from kafka.errors import KafkaError, KafkaConnectionError
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-from features.schema import (
+from dotenv import load_dotenv  # noqa: E402
+
+load_dotenv(ROOT / ".env")
+
+import httpx  # noqa: E402
+from kafka import KafkaConsumer  # noqa: E402  (kafka-python)
+from kafka.errors import KafkaError  # noqa: E402
+
+from features.kafka_serde import JsonValueSerializer, SafeJsonDeserializer  # noqa: E402
+from features.schema import (  # noqa: E402
     IPsecFeatureRow,
     KafkaAlert,
     KafkaInferenceResult,
@@ -40,16 +54,18 @@ from features.schema import (
 # Config (env overrides CLI defaults)
 # 
 
-BOOTSTRAP_SERVERS: str   = os.getenv("KAFKA_BOOTSTRAP",   "localhost:9092")
+BOOTSTRAP_SERVERS: str   = os.getenv("KAFKA_BOOTSTRAP",   "localhost:29092")
 API_BASE_URL: str        = os.getenv("API_BASE_URL",       "http://localhost:8000")
-TOPIC_RAW_FEATURES: str  = "raw-features"
-TOPIC_INFERENCE: str     = "inference-results"
-TOPIC_ALERTS: str        = "alerts"
+TOPIC_RAW_FEATURES: str  = os.getenv("KAFKA_TOPIC_RAW_FEATURES", "raw-features")
+TOPIC_INFERENCE: str     = os.getenv("KAFKA_TOPIC_INFERENCE_RESULTS", "inference-results")
+TOPIC_ALERTS: str        = os.getenv("KAFKA_TOPIC_ALERTS", "alerts")
 CONSUMER_GROUP: str      = "ipsec-consumer-group"
 ALERT_SCORE_THRESHOLD: float = 50.0   # security_score < this → publish to alerts
 CONNECT_RETRY_SEC: int   = 5
 MAX_CONNECT_RETRIES: int = 12
-API_TIMEOUT_SEC: float   = 15.0
+API_TIMEOUT_SEC: float   = 30.0
+API_MAX_ATTEMPTS: int    = 6          # transient API failures: retry with backoff
+API_RETRY_BASE_SEC: float = 1.0       # 1, 2, 4, 8, 16 s between attempts
 
 # Rolling window for computing median pipeline latency (last N samples)
 LATENCY_WINDOW_SIZE: int = 50
@@ -70,7 +86,7 @@ def _make_consumer(bootstrap: str, retries: int = MAX_CONNECT_RETRIES) -> KafkaC
                 group_id=CONSUMER_GROUP,
                 auto_offset_reset="earliest",     # catch up on missed messages after restart
                 enable_auto_commit=False,          # manual commit after successful processing
-                value_deserializer=lambda b: json.loads(b.decode("utf-8")),
+                value_deserializer=SafeJsonDeserializer(),  # bad JSON -> dead letter, not a crash
                 # Tuning
                 max_poll_records=10,               # process 10 at a time — keeps latency low
                 session_timeout_ms=30_000,
@@ -80,10 +96,10 @@ def _make_consumer(bootstrap: str, retries: int = MAX_CONNECT_RETRIES) -> KafkaC
             )
             log.info("Kafka consumer connected | bootstrap=%s | group=%s", bootstrap, CONSUMER_GROUP)
             return consumer
-        except (KafkaConnectionError, KafkaError):
+        except KafkaError as exc:
             log.warning(
-                "Kafka not reachable (attempt %d/%d) — retrying in %ds",
-                attempt, retries, CONNECT_RETRY_SEC,
+                "Kafka not reachable (attempt %d/%d): %s — retrying in %ds",
+                attempt, retries, exc, CONNECT_RETRY_SEC,
             )
             if attempt < retries:
                 time.sleep(CONNECT_RETRY_SEC)
@@ -97,7 +113,7 @@ def _make_producer(bootstrap: str):
     from kafka import KafkaProducer  # kafka-python library
     return KafkaProducer(
         bootstrap_servers=bootstrap,
-        value_serializer=lambda v: json.dumps(v, default=str).encode("utf-8"),
+        value_serializer=JsonValueSerializer(),
         acks="all",
         retries=3,
         retry_backoff_ms=200,
@@ -116,7 +132,8 @@ def _dead_letter(raw_msg: dict, reason: str, detail: str = "") -> None:
     Never raises — called from error paths.
     """
     try:
-        dl_path = os.getenv("DEAD_LETTER_LOG", "/tmp/consumer_dead_letter.jsonl")
+        dl_path = os.getenv("CONSUMER_DEAD_LETTER_LOG", str(ROOT / ".run" / "consumer_dead_letter.jsonl"))
+        os.makedirs(os.path.dirname(dl_path), exist_ok=True)
         entry = {
             "ts": datetime.now(timezone.utc).isoformat(),
             "reason": reason,
@@ -141,6 +158,8 @@ def _deserialise(envelope: dict) -> Optional[IPsecFeatureRow]:
     """
     if not isinstance(envelope, dict):
         raise TypeError(f"Expected dict, got {type(envelope).__name__}")
+    if "__undecodable__" in envelope:
+        raise ValueError(f"Message is not valid JSON: {envelope['__undecodable__']}")
 
     feature_dict = envelope.get("feature_row")
     if not feature_dict or not isinstance(feature_dict, dict):
@@ -161,16 +180,30 @@ def _deserialise(envelope: dict) -> Optional[IPsecFeatureRow]:
 def _call_analyze(client: httpx.Client, row: IPsecFeatureRow) -> dict:
     """
     POST the feature row to /analyze and return the response dict.
-    Raises httpx.HTTPStatusError or httpx.RequestError on failure.
+    Retries connection errors, timeouts and 5xx responses with exponential
+    backoff; raises httpx.HTTPStatusError / httpx.RequestError when giving up.
     """
     payload = row.to_dict()
-    resp = client.post(
-        f"{API_BASE_URL}/analyze",
-        json=payload,
-        timeout=API_TIMEOUT_SEC,
-    )
-    resp.raise_for_status()
-    return resp.json()
+    for attempt in range(1, API_MAX_ATTEMPTS + 1):
+        try:
+            resp = client.post("/analyze", json=payload, timeout=API_TIMEOUT_SEC)
+            if resp.status_code < 500:
+                resp.raise_for_status()
+                return resp.json()
+            error: Exception = httpx.HTTPStatusError(
+                f"HTTP {resp.status_code}", request=resp.request, response=resp
+            )
+        except httpx.RequestError as exc:
+            error = exc
+        if attempt == API_MAX_ATTEMPTS:
+            raise error
+        delay = API_RETRY_BASE_SEC * 2 ** (attempt - 1)
+        log.warning(
+            "API unavailable for session_id=%s (%s) — retry %d/%d in %.0fs",
+            row.session_id, error, attempt, API_MAX_ATTEMPTS - 1, delay,
+        )
+        time.sleep(delay)
+    raise RuntimeError("unreachable")
 
 
 # 
@@ -192,6 +225,7 @@ def _publish_inference_result(producer, api_response: dict, latency_ms: float) -
     )
     msg = {
         **result.__dict__,
+        "es_id": api_response.get("es_id"),
         "pipeline_latency_ms": round(latency_ms, 2),
         "published_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -228,6 +262,30 @@ def _publish_alert(producer, api_response: dict, row: IPsecFeatureRow) -> None:
         alert.session_id, alert.security_score, alert.severity,
         alert.top_risk_flag[:80] if alert.top_risk_flag else "—",
     )
+
+
+# 
+# Latency
+# 
+
+def _end_to_end_latency_ms(envelope: dict, received_monotonic: float) -> float:
+    """
+    Milliseconds from the producer's `published_at` stamp to now (the result is
+    stored in ES by the time /analyze returns). Falls back to the time spent in
+    this consumer if the stamp is missing or unparseable.
+    """
+    stamp = envelope.get("published_at") if isinstance(envelope, dict) else None
+    if stamp:
+        try:
+            published = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+            if published.tzinfo is None:
+                published = published.replace(tzinfo=timezone.utc)
+            elapsed = (datetime.now(timezone.utc) - published).total_seconds() * 1000.0
+            if elapsed >= 0:
+                return elapsed
+        except ValueError:
+            pass
+    return (time.monotonic() - received_monotonic) * 1000.0
 
 
 # 
@@ -273,6 +331,10 @@ def run_consumer_loop(
     global API_BASE_URL
     API_BASE_URL = api_url  # allow override from CLI
 
+    def _sigterm(_sig, _frame):
+        raise KeyboardInterrupt  # unwind through the finally block below
+    signal.signal(signal.SIGTERM, _sigterm)
+
     log.info(
         "Consumer starting | bootstrap=%s | group=%s | api=%s | alert_threshold=%.0f",
         bootstrap, CONSUMER_GROUP, api_url, ALERT_SCORE_THRESHOLD,
@@ -283,11 +345,7 @@ def run_consumer_loop(
     latency_tracker = LatencyTracker()
 
     # httpx client — reused across all requests (connection pool)
-    http_client = httpx.Client(
-        base_url=api_url,
-        timeout=API_TIMEOUT_SEC,
-        headers={"Content-Type": "application/json"},
-    )
+    http_client = httpx.Client(base_url=api_url, timeout=API_TIMEOUT_SEC)
 
     processed = 0
     errors = 0
@@ -340,9 +398,8 @@ def run_consumer_loop(
                 consumer.commit()
                 continue
 
-            # -- Compute latency 
-            responded_at = time.monotonic()
-            latency_ms = (responded_at - received_at) * 1000.0
+            # -- Compute latency: feature publish -> inference result stored
+            latency_ms = _end_to_end_latency_ms(envelope, received_at)
             latency_tracker.record(latency_ms)
 
             log.info(
@@ -404,6 +461,7 @@ def run_consumer_loop(
         except Exception:
             pass
         consumer.close()
+        http_client.close()
         log.info(
             "Consumer stopped | processed=%d | errors=%d | alerts=%d",
             processed, errors, alerts_sent,
@@ -421,6 +479,8 @@ def main() -> None:
         level=logging.INFO,
         stream=sys.stdout,
     )
+    logging.getLogger("kafka").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
     parser = argparse.ArgumentParser(description="IPsec Kafka feature row consumer")
     parser.add_argument(

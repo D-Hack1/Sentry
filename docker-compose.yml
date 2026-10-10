@@ -1,3 +1,5 @@
+name: sentry
+
 networks:
   ipsec-net:
     driver: bridge
@@ -127,11 +129,8 @@ services:
     environment:
       discovery.type: single-node
       xpack.security.enabled: "false"
+      cluster.routing.allocation.disk.threshold_enabled: "false"
       ES_JAVA_OPTS: ${ES_JAVA_OPTS}
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
     volumes:
       - es-data:/usr/share/elasticsearch/data
     healthcheck:

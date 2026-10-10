@@ -2,9 +2,9 @@
 set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-set -a
-source "$ROOT/.env"
-set +a
+# shellcheck source=../scripts/env.sh
+source "$ROOT/scripts/env.sh"
+load_env_file "$ROOT/.env" || { echo "missing $ROOT/.env (cp .env.example .env)" >&2; exit 1; }
 
 TIMEOUT="${1:-$SA_TIMEOUT}"
 INTERVAL=1

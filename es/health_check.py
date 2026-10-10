@@ -5,14 +5,17 @@ from pathlib import Path
 from dotenv import load_dotenv
 from elasticsearch import Elasticsearch
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
+from es.init_index import es_url_from_env  # noqa: E402
 
 
 def main():
-    host = os.environ.get("ES_HOST")
+    host = es_url_from_env()
     index = os.environ.get("ES_INDEX")
-    if not host or not index:
-        print("FAIL: ES_HOST and ES_INDEX must be set")
+    if not index:
+        print("FAIL: ES_INDEX must be set")
         return 1
 
     try:

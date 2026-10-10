@@ -22,7 +22,7 @@ Date: 2026-09-28
 | `python kafka/health_check.py` | OK — reachable at localhost:29092, all 4 topics present |
 | `python es/health_check.py` | OK — status=green, index `ipsec_sessions` exists |
 | Kafka topics | `raw-features`, `inference-results`, `alerts`, `pipeline-metrics` — 1 partition, replication factor 1, retention.ms=21600000 each |
-| `FastAPI /health` | Not tested — `api/main.py`, `api/correlator.py`, `api/report_generator.py` are still empty |
+| `FastAPI /health` | See the 2026-10-10 run below |
 
 ## Capture matrix
 
@@ -43,7 +43,41 @@ Date: 2026-09-28
 - `kafka/health_check.py` read `KAFKA_BOOTSTRAP_SERVERS`, but `kafka/producer.py` and `kafka/consumer.py` read `KAFKA_BOOTSTRAP`. Standardized on `KAFKA_BOOTSTRAP` in `.env`, `.env.example`, and `kafka/health_check.py`.
 - Kafka topics were created with 3 partitions; dropped to 1 partition, replication factor 1, with `retention.ms=21600000` added.
 
+## Full-stack run — 2026-10-10
+
+`./stop.sh && ./start.sh --no-lab`: everything bootstrapped and started in about 40 s.
+
+| Check | Result |
+|---|---|
+| `GET /health` | `status: ok`. Kafka connected (4 topics), ES green, models loaded |
+| `python scripts/e2e_test.py` | **35/35 checks passed** |
+| Direct `/analyze` (7 real-PCAP fixture rows) | all 5 traffic classes correct; best-practice config 100/info; worst config 0/critical |
+| Kafka path | `raw-features` → consumer → API → ES, result on `inference-results`, alert on `alerts` |
+| Watcher path | synthetic IKEv2+ESP PCAP → watcher → producer → Kafka → consumer → ES in < 2 s; cipher parsed from IKE_SA_INIT, mode inferred by the protocol model |
+| `/sessions` filters, `/stats`, `/report` PDF, `/metrics` SSE | all OK |
+| Dashboard (headless Chromium) | Live feed, session detail, stats, metrics, report render live data, no console errors |
+| `python -m pytest` | 239 passed |
+
+### Issues found and fixed in this pass
+
+- `ml/` (inference, scorer, explainability, train, evaluate, tests), `reports/template.html`,
+  `data/verify.py`, `features/ike_field_table.py` were empty files — implemented.
+- `elasticsearch==9.x` client is rejected by the 8.11 server — pinned `elasticsearch==8.19.3`;
+  `AsyncElasticsearch` needs `aiohttp` (added).
+- Models were trained with scikit-learn 1.9.1 but 1.8.0 was pinned — bumped; `matplotlib` added for `evaluate.py`.
+- ES mapping (`ts` epoch_second, `evidence` text) conflicted with the documents the API writes — remapped;
+  `es/init_index.py` now upgrades in place / recreates empty incompatible indices.
+- Elasticsearch `memlock` ulimit removed (only meaningful with `bootstrap.memory_lock`; fails on rootless/restricted Docker).
+- Compose project pinned to `name: sentry` so `make promisc` finds the `sentry-monitor` image.
+- `source .env` breaks on the unquoted `ES_JAVA_OPTS` value — shell scripts use `scripts/env.sh` instead.
+- Watcher called non-existent `parse_pcap` / `extract_features`; its staging queue was never drained
+  (producer ran in a separate process) — producer now runs as a thread inside the watcher; PCAPs are
+  processed on close/rename/size-settle instead of 0.5 s after creation.
+
 ## Known gaps
 
-- `api/main.py` and the rest of `api/` are empty — `/health` and `/analyze` are not implemented yet, so the consumer (`kafka/consumer.py`) and this integration test cannot exercise the full pipeline end to end.
-- `capture/pcaps/` is not version-controlled; share the 100-file set separately (see `LAB.md`).
+- The capture-lab images (`initiator`, `responder`, `monitor`) could not be rebuilt in the 2026-10-10
+  environment (Debian mirrors unreachable), so `make matrix` was not re-run; the pinned Debian package
+  versions in their Dockerfiles must still exist on the mirror for `./start.sh` (without `--no-lab`) to build them.
+- The protocol model was trained on ~1 sample per config class (macro-F1 0.15); config fields visible in
+  plaintext IKE always come from the parser, the model only fills the encrypted ones.

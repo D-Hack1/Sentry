@@ -1,7 +1,44 @@
-.PHONY: up down capture replay matrix logs promisc shell-initiator shell-responder shell-monitor
+.PHONY: start start-nolab stop test e2e labels verify features train evaluate \
+        up down capture replay matrix logs promisc shell-initiator shell-responder shell-monitor
 
-include .env
+-include .env
 export
+
+PY := .venv/bin/python
+
+# ── Whole stack ──────────────────────────────────────────────────────────────
+start:            ## bootstrap + start every service (infra, lab, app, dashboard)
+	./start.sh
+
+start-nolab:      ## same, without the strongSwan capture lab
+	./start.sh --no-lab
+
+stop:             ## stop every service (keeps Elasticsearch data)
+	./stop.sh
+
+test:             ## unit tests
+	$(PY) -m pytest
+
+e2e:              ## end-to-end test against a running stack
+	$(PY) scripts/e2e_test.py
+
+# ── Dataset + training ───────────────────────────────────────────────────────
+labels:           ## label JSONs from capture-matrix PCAP names
+	$(PY) data/make_labels.py --from-pcaps
+
+verify:           ## check PCAP <-> label pairing
+	$(PY) data/verify.py
+
+features:         ## extract data/features/*.parquet from every PCAP (no Kafka)
+	$(PY) -m features.watcher --replay $(PCAP_DIR) --no-kafka
+
+train:            ## train all models (add ARGS=--skip-optuna for a fast run)
+	$(PY) ml/train.py $(ARGS)
+
+evaluate:         ## classification reports + confusion matrices
+	$(PY) ml/evaluate.py
+
+# ── Capture lab ──────────────────────────────────────────────────────────────
 
 COMPOSE := docker compose
 

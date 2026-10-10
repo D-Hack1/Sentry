@@ -1,3 +1,15 @@
+export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'info';
+export type TrafficClass = 'web' | 'voip' | 'video_stream' | 'file_transfer' | 'icmp';
+
+export interface Correlation {
+  initiator_ip?: string;
+  weak_session_count?: number;
+  pattern_detected?: boolean;
+  pattern_description?: string;
+  correlation_confidence?: number;
+  recommended_action?: string;
+}
+
 export interface Session {
   session_id: string;
   es_id: string;
@@ -7,7 +19,7 @@ export interface Session {
   initiator_port?: number;
   responder_port?: number;
   duration?: number;
-  
+
   ike_version: number;
   ike_exchange_type?: number;
   ike_initiator_spi?: string;
@@ -16,15 +28,16 @@ export interface Session {
   ike_nat_traversal?: boolean;
   ike_packet_count?: number;
   ike_handshake_duration?: number;
-  
-  mode: 'tunnel' | 'transport';
-  cipher_suite: string;
-  auth_algo?: string;
-  dh_group: string;
-  pfs_enabled: boolean;
-  key_lifetime_sec?: number;
+
+  // null only when neither the IKE parser nor the protocol model could determine it
+  mode: 'tunnel' | 'transport' | null;
+  cipher_suite: string | null;
+  auth_algo?: string | null;
+  dh_group: string | null;
+  pfs_enabled: boolean | null;
+  key_lifetime_sec?: number | null;
   esp_spi?: string;
-  
+
   esp_packet_count?: number;
   esp_bytes_total?: number;
   esp_pkt_size_mean?: number;
@@ -43,16 +56,28 @@ export interface Session {
   esp_pkt_size_entropy?: number;
   esp_iat_entropy?: number;
   esp_active_fraction?: number;
-  
-  traffic_class: 'web' | 'voip' | 'video_stream' | 'file_transfer' | 'icmp';
+
+  traffic_class: TrafficClass;
   traffic_confidence: number;
   anomaly_score: number;
   ai_confidence: number;
   security_score: number;
-  severity: 'critical' | 'high' | 'medium' | 'low' | 'info';
+  severity: Severity;
   risk_flags: string[];
-  evidence: string[];
+  // Full record only (GET /sessions/{id}); list items omit it.
+  evidence?: string[];
   report_id?: string | null;
+
+  // Extensions beyond API_CONTRACT v1.2 (all optional)
+  anomaly_label?: 'normal' | 'slightly_unusual' | 'anomalous';
+  recommendations?: string[];
+  config_evidence?: string[];
+  config_source?: Partial<Record<'mode' | 'cipher_suite' | 'dh_group' | 'pfs_enabled', 'parser' | 'model'>>;
+  predicted_config?: string;
+  config_confidence?: number;
+  adjusted_security_score?: number;
+  adjusted_severity?: Severity;
+  correlation?: Correlation;
 }
 
 export interface SessionListResponse {
@@ -100,12 +125,15 @@ export interface HealthResponse {
   kafka: {
     connected: boolean;
     topics: string[];
+    missing_topics?: string[];
+    detail?: string;
   };
   elasticsearch: {
     connected: boolean;
     cluster_status: string;
     index: string;
     doc_count: number;
+    detail?: string;
   };
   models: {
     protocol_model: boolean;
@@ -118,6 +146,6 @@ export interface ErrorEnvelope {
   error: {
     code: string;
     message: string;
-    detail: any | null;
+    detail: unknown;
   };
 }
