@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>IPsec Security Assessment — {{ session.session_id }}</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm 20mm 16mm;
+          @bottom-right { content: "Page " counter(page) " of " counter(pages); font-size: 8pt; color: #6b7280; } }
+  * { box-sizing: border-box; }
+  body { font-family: "DejaVu Sans", "Helvetica", sans-serif; font-size: 9.5pt; color: #111827; line-height: 1.45; }
+  h1 { font-size: 18pt; margin: 0 0 2px 0; }
+  h2 { font-size: 11.5pt; margin: 18px 0 8px 0; padding-bottom: 4px; border-bottom: 2px solid #e5e7eb; color: #1f2937; }
+  .muted { color: #6b7280; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #1e3a8a; padding-bottom: 8px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; color: #fff; font-size: 8pt; font-weight: bold; text-transform: uppercase; }
+  table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+  th, td { text-align: left; padding: 4px 6px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  th { background: #f3f4f6; font-size: 8.5pt; color: #374151; }
+  td.k { width: 34%; color: #4b5563; }
+  .summary { background: #f8fafc; border-left: 4px solid #1e3a8a; padding: 8px 10px; }
+  .score-row { display: flex; align-items: center; gap: 18px; }
+  .kpis { display: flex; gap: 10px; flex: 1; }
+  .kpi { flex: 1; border: 1px solid #e5e7eb; border-radius: 6px; padding: 6px 8px; }
+  .kpi .v { font-size: 13pt; font-weight: bold; }
+  .flag { border-left: 4px solid; padding: 4px 8px; margin-bottom: 6px; background: #fafafa; }
+  ol.recs li { margin-bottom: 5px; }
+  ul.ev { margin: 4px 0 0 0; padding-left: 16px; }
+  .two { display: flex; gap: 14px; }
+  .two > div { flex: 1; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>IPsec VPN Security Assessment</h1>
+    <div class="muted">Session <strong>{{ session.session_id }}</strong></div>
+    <div class="muted">Generated {{ generated_at }}{% if session.report_id %} · Report {{ session.report_id }}{% endif %}</div>
+  </div>
+  <div><span class="badge" style="background: {{ severity_color[severity] }}">{{ severity }}</span></div>
+</div>
+
+<h2>Executive Summary</h2>
+<div class="summary">{{ executive_summary }}</div>
+
+<h2>Security Score</h2>
+<div class="score-row">
+  <div>{{ gauge_svg | safe }}</div>
+  <div class="kpis">
+    <div class="kpi"><div class="muted">Severity</div><div class="v" style="color: {{ severity_color[severity] }}">{{ severity | upper }}</div></div>
+    <div class="kpi"><div class="muted">AI confidence</div><div class="v">{{ "%.0f" | format((session.ai_confidence or 0) * 100) }}%</div></div>
+    <div class="kpi"><div class="muted">Anomaly score</div><div class="v">{{ "%.3f" | format(session.anomaly_score or 0) }}</div>
+      <div class="muted">{{ (session.anomaly_label or "n/a") | replace("_", " ") }}</div></div>
+    {% if session.adjusted_security_score is defined and session.adjusted_security_score is not none and session.adjusted_security_score != session.security_score %}
+    <div class="kpi"><div class="muted">Correlation-adjusted</div><div class="v">{{ "%.0f" | format(session.adjusted_security_score) }}</div>
+      <div class="muted">{{ session.adjusted_severity }}</div></div>
+    {% endif %}
+  </div>
+</div>
+
+<h2>Session Metadata</h2>
+<div class="two">
+  <div>
+    <table>
+      <tr><td class="k">Initiator</td><td>{{ session.initiator_ip }}:{{ session.initiator_port }}</td></tr>
+      <tr><td class="k">Responder</td><td>{{ session.responder_ip }}:{{ session.responder_port }}</td></tr>
+      <tr><td class="k">Session start</td><td>{{ session.ts }}</td></tr>
+      <tr><td class="k">Capture duration</td><td>{{ "%.2f" | format(session.duration or 0) }} s</td></tr>
+      <tr><td class="k">IKE version</td><td>IKEv{{ session.ike_version }}</td></tr>
+      <tr><td class="k">IKE packets / handshake</td><td>{{ session.ike_packet_count }} pkts / {{ session.ike_handshake_duration }} s</td></tr>
+      <tr><td class="k">NAT traversal</td><td>{{ "yes" if session.ike_nat_traversal else "no" }}</td></tr>
+    </table>
+  </div>
+  <div>
+    <table>
+      {% set src = session.config_source or {} %}
+      <tr><td class="k">Mode</td><td>{{ session.mode or "unknown" }}{% if src.mode == "model" %} <span class="muted">(inferred)</span>{% endif %}</td></tr>
+      <tr><td class="k">Cipher suite</td><td>{{ session.cipher_suite or "unknown" }}{% if src.cipher_suite == "model" %} <span class="muted">(inferred)</span>{% endif %}</td></tr>
+      <tr><td class="k">Integrity</td><td>{{ session.auth_algo or "unknown" }}</td></tr>
+      <tr><td class="k">DH group</td><td>{{ session.dh_group or "unknown" }}{% if src.dh_group == "model" %} <span class="muted">(inferred)</span>{% endif %}</td></tr>
+      <tr><td class="k">PFS</td><td>{% if session.pfs_enabled is sameas true %}enabled{% elif session.pfs_enabled is sameas false %}disabled{% else %}unknown{% endif %}{% if src.pfs_enabled == "model" %} <span class="muted">(inferred)</span>{% endif %}</td></tr>
+      <tr><td class="k">Key lifetime</td><td>{{ (session.key_lifetime_sec ~ " s") if session.key_lifetime_sec is not none else "not observed" }}</td></tr>
+      <tr><td class="k">ESP SPI</td><td>{{ session.esp_spi }}</td></tr>
+    </table>
+  </div>
+</div>
+
+<h2>Risk Flags ({{ risk_flags | length }})</h2>
+{% if risk_flags %}
+  {% for flag in risk_flags %}
+  <div class="flag" style="border-color: {{ severity_color[flag.severity] }}">
+    <span class="badge" style="background: {{ severity_color[flag.severity] }}">{{ flag.severity }}</span>
+    {{ (flag.text.split(":", 1)[1] if ":" in flag.text else flag.text) | trim }}
+  </div>
+  {% endfor %}
+{% else %}
+  <p>No security rule violations detected.</p>
+{% endif %}
+
+<h2>Threat Matrix — MITRE ATT&amp;CK for ICS</h2>
+{% if mitre_threats %}
+<table>
+  <tr><th style="width: 12%">ID</th><th style="width: 24%">Technique</th><th style="width: 20%">Tactic</th><th>Why it applies</th></tr>
+  {% for t in mitre_threats %}
+  <tr><td>{{ t.id }}</td><td>{{ t.name }}</td><td>{{ t.tactic }}</td><td>{{ t.reasons | join(" ") }}</td></tr>
+  {% endfor %}
+</table>
+{% else %}
+<p>No mapped techniques — the negotiated configuration does not expose known weaknesses.</p>
+{% endif %}
+
+<h2>Recommendations (highest impact first)</h2>
+{% if recommendations %}
+<ol class="recs">{% for r in recommendations %}<li>{{ r }}</li>{% endfor %}</ol>
+{% else %}
+<p>No changes required.</p>
+{% endif %}
+
+<h2>Traffic Analysis &amp; AI Evidence</h2>
+<table>
+  <tr><td class="k">Predicted traffic class</td><td><strong>{{ (session.traffic_class or "unknown") | replace("_", " ") }}</strong>
+      ({{ "%.1f" | format((session.traffic_confidence or 0) * 100) }}% confidence)</td></tr>
+  <tr><td class="k">ESP packets / bytes</td><td>{{ session.esp_packet_count }} / {{ session.esp_bytes_total }}</td></tr>
+  <tr><td class="k">Protocol-model prediction</td><td>{{ (session.predicted_config or "n/a") | replace("__", " / ") }}
+      ({{ "%.1f" | format((session.config_confidence or 0) * 100) }}%)</td></tr>
+</table>
+<div class="two">
+  <div><strong>Why this traffic class (SHAP)</strong>
+    <ul class="ev">{% for e in traffic_evidence %}<li>{{ e }}</li>{% else %}<li class="muted">n/a</li>{% endfor %}</ul></div>
+  <div><strong>Why this configuration (SHAP)</strong>
+    <ul class="ev">{% for e in config_evidence %}<li>{{ e }}</li>{% else %}<li class="muted">n/a</li>{% endfor %}</ul></div>
+</div>
+
+{% if correlation %}
+<h2>Initiator Correlation</h2>
+<table>
+  <tr><td class="k">Weak sessions from {{ correlation.initiator_ip }} (last hour)</td><td>{{ correlation.weak_session_count }}</td></tr>
+  <tr><td class="k">Pattern detected</td><td>{{ "yes" if correlation.pattern_detected else "no" }}{% if correlation.pattern_detected %} ({{ "%.0f" | format((correlation.correlation_confidence or 0) * 100) }}% confidence){% endif %}</td></tr>
+  {% if correlation.pattern_description %}<tr><td class="k">Patterns</td><td>{{ correlation.pattern_description }}</td></tr>{% endif %}
+  <tr><td class="k">Recommended action</td><td>{{ correlation.recommended_action }}</td></tr>
+</table>
+{% endif %}
+
+<p class="muted" style="margin-top: 18px; font-size: 8pt;">
+  Generated by Sentry — AI-Powered IPsec VPN Protocol Analyzer. ESP payloads are never decrypted; traffic
+  classification uses encrypted-packet metadata only. Security scoring is deterministic and rule-based.
+</p>
+</body>
+</html>

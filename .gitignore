@@ -91,3 +91,6 @@ yarn-error.log*
 convert_pcaps.py
 data/features/
 *.zip
+
+# Runtime state from start.sh (pid files, logs, dead-letter queues)
+.run/

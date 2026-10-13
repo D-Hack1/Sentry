@@ -90,6 +90,21 @@ def process_pcap(
     return row
 
 
+def extract_features(
+    pcap_path: str | Path,
+    ike_fields: Mapping[str, Any] | None,
+    output_dir: str | Path | None = None,
+) -> IPsecFeatureRow | None:
+    """
+    Watcher-facing entry point: build the full IPsecFeatureRow for one PCAP
+    (IKE fields from features/ike_parser.py + ESP metadata computed here).
+    Also writes data/features/<session_id>.parquet. Returns None when the IKE
+    fields are unusable (ike_parse_failed).
+    """
+    row = process_pcap(pcap_path, ike_fields, output_dir)
+    return None if row is None else IPsecFeatureRow.from_dict(row)
+
+
 def _read_packets(pcap_path: str | Path) -> list[Any]:
     from scapy.all import rdpcap
 

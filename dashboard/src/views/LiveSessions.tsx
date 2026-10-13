@@ -31,23 +31,25 @@ function SessionCard({ session }: { session: Session }) {
       <div className="grid grid-cols-4 gap-4 mt-4 text-sm bg-black/20 p-3 rounded-lg border border-[var(--color-border-subtle)]">
         <div>
           <div className="text-gray-500 text-xs mb-1">Mode</div>
-          <div className="capitalize">{session.mode}</div>
+          <div className="capitalize">{session.mode ?? 'unknown'}</div>
         </div>
         <div>
           <div className="text-gray-500 text-xs mb-1">Cipher Suite</div>
-          <div className="font-mono text-xs text-blue-400">{session.cipher_suite}</div>
+          <div className="font-mono text-xs text-blue-400">{session.cipher_suite ?? 'unknown'}</div>
         </div>
         <div>
           <div className="text-gray-500 text-xs mb-1">DH Group</div>
-          <div className="font-mono text-xs">{session.dh_group}</div>
+          <div className="font-mono text-xs">{session.dh_group ?? 'unknown'}</div>
         </div>
         <div>
           <div className="text-gray-500 text-xs mb-1">PFS</div>
           <div className="flex items-center gap-1">
-            {session.pfs_enabled ? (
+            {session.pfs_enabled === true ? (
               <><Lock size={14} className="text-green-500"/> <span className="text-green-500">Enabled</span></>
-            ) : (
+            ) : session.pfs_enabled === false ? (
               <><Unlock size={14} className="text-red-500"/> <span className="text-red-500">Disabled</span></>
+            ) : (
+              <span className="text-gray-500">Unknown</span>
             )}
           </div>
         </div>
@@ -74,10 +76,13 @@ function SessionCard({ session }: { session: Session }) {
           <div className="text-xs text-gray-400">Security Score</div>
         </div>
         <div className="flex gap-2">
-           {session.risk_flags.length > 0 && (
+           {(session.risk_flags?.length ?? 0) > 0 && (
              <span className="badge-neon badge-critical flex items-center gap-1">
                <AlertTriangle size={12} /> {session.risk_flags.length} risks
              </span>
+           )}
+           {session.correlation?.pattern_detected && (
+             <span className="badge-neon badge-high flex items-center gap-1">repeat offender</span>
            )}
            <span className="badge-neon badge-purple flex items-center gap-1">
              {session.traffic_class}

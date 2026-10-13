@@ -61,6 +61,40 @@ evidence, and recommendations**.
 
 ------------------------------------------------------------------------
 
+# ⚡ Quick Start
+
+Requirements: Docker (with Compose v2), Python ≥ 3.11, Node.js ≥ 20, ~4 GB free RAM.
+PDF reports also need the Pango libraries (`apt install libpango-1.0-0 libpangoft2-1.0-0` / `brew install pango`).
+
+``` bash
+./start.sh            # bootstrap + start everything (see below)
+./start.sh --no-lab   # same, without the strongSwan capture-lab containers
+./stop.sh             # stop everything (Elasticsearch data is kept)
+./stop.sh --purge     # ...and delete the Elasticsearch data volume
+```
+
+`start.sh` creates `.env` from `.env.example`, builds the Python venv (`.venv`),
+installs the dashboard's npm packages, starts Zookeeper, Kafka (and creates the
+4 topics), Elasticsearch, and the capture lab. It then creates the ES index and
+starts these local services. Each one logs to `.run/logs/<name>.log`:
+
+| Service | What it does |
+|---|---|
+| `api` | FastAPI on <http://localhost:8000> (docs at `/docs`) |
+| `consumer` | `raw-features` → `POST /analyze` → `inference-results` / `alerts` |
+| `metrics` | publishes `pipeline-metrics` every 2 s (dashboard SSE feed) |
+| `watcher` | turns new `capture/pcaps/*.pcap` into feature rows → `raw-features` |
+| `dashboard` | Vite dev server on <http://localhost:5173> |
+
+Try it without the lab, then run the end-to-end self test:
+
+``` bash
+.venv/bin/python scripts/synth_pcap.py --traffic voip --cipher aes128_cbc --dh group2
+.venv/bin/python scripts/e2e_test.py
+```
+
+------------------------------------------------------------------------
+
 # 🏗️ System Architecture
 
 ``` text
@@ -345,7 +379,8 @@ It contains four major groups of information:
 
 ``` text
 session_id
-timestamp
+es_id
+ts
 initiator_ip
 responder_ip
 initiator_port
@@ -411,15 +446,18 @@ traffic_confidence
 
 The FastAPI backend exposes the following main endpoints.
 
-  Endpoint               Purpose
-  ---------------------- -----------------------------------------
-  `POST /analyze`        Analyze an IPsec feature row
-  `GET /sessions`        Query analyzed sessions
-  `GET /sessions/{id}`   Retrieve a specific session
-  `GET /report/{id}`     Generate/download a PDF security report
-  `GET /stats`           Session and security statistics
-  `GET /metrics`         Live pipeline metrics using SSE
-  `GET /health`          Backend/service health status
+| Endpoint | Purpose |
+|---|---|
+| `POST /analyze` | Analyze an IPsec feature row |
+| `GET /sessions` | Query analyzed sessions (filters + pagination) |
+| `GET /sessions/{id}` | Retrieve a specific session (`es_id` or `session_id`) |
+| `GET /report/{id}` | Generate/download a PDF security report |
+| `GET /stats` | Session and security statistics |
+| `GET /metrics` | Live pipeline metrics using SSE |
+| `GET /health` | Backend/service health status |
+| `GET /correlations/{ip}` | Repeated weak-config sessions from one initiator |
+
+The full contract is in `API_CONTRACT.md`.
 
 ### `POST /analyze`
 
@@ -604,7 +642,8 @@ The session index contains fields including:
 
 ``` text
 session_id
-timestamp
+es_id
+ts
 initiator_ip
 responder_ip
 ike_version
@@ -636,9 +675,15 @@ efficiently.
 ├── .env
 ├── .env.example
 ├── Makefile
+├── start.sh / stop.sh       ← bootstrap + start / tear down every service
 ├── LAB.md
 ├── INTEGRATION.md
 ├── API_CONTRACT.md
+│
+├── scripts/
+│   ├── env.sh               ← safe .env loader for shell scripts
+│   ├── synth_pcap.py        ← synthetic IKEv2 + ESP capture (no lab needed)
+│   └── e2e_test.py          ← end-to-end test of a running stack
 │
 ├── initiator/
 │   └── Dockerfile
@@ -652,7 +697,8 @@ efficiently.
 ├── capture/
 │   ├── run_matrix.sh
 │   ├── gen_config.py
-│   └── verify_sa.sh
+│   ├── verify_sa.sh
+│   └── pcaps/               ← captures land here (watched by features/watcher.py)
 │
 ├── traffic/
 │   ├── web_traffic.py
@@ -662,9 +708,10 @@ efficiently.
 │   └── icmp_flood.py
 │
 ├── data/
-│   ├── raw/
-│   ├── labels/
-│   ├── features/
+│   ├── labels/              ← ground-truth JSON per session
+│   ├── features/            ← one parquet per session
+│   ├── labels.py
+│   ├── make_labels.py
 │   └── verify.py
 │
 ├── zeek/
@@ -679,6 +726,7 @@ efficiently.
 │   ├── pipeline.py
 │   ├── encode.py
 │   ├── ike_parser.py
+│   ├── kafka_serde.py
 │   └── watcher.py
 │
 ├── kafka/
@@ -699,7 +747,10 @@ efficiently.
 │   ├── scorer.py
 │   ├── protocol_model.joblib
 │   ├── traffic_model.joblib
+│   ├── anomaly_model.joblib
 │   ├── encoder.joblib
+│   ├── optuna_study_traffic.pkl
+│   ├── INFERENCE_SCHEMA.md
 │   └── tests/
 │
 ├── api/
@@ -792,28 +843,20 @@ coverage across the VPN configuration and traffic combinations.
 
 # 🏋️ Training
 
-The training pipeline is launched through:
+Trained models ship in `ml/` (`protocol_model.joblib`, `traffic_model.joblib`,
+`anomaly_model.joblib`, `encoder.joblib`). To retrain on new captures:
 
 ``` bash
-python ml/train.py
+make labels      # data/labels/<session_id>.json from capture-matrix PCAP names
+make verify      # every PCAP has a valid label and vice versa
+make features    # data/features/<session_id>.parquet (IKE parser + ESP pipeline)
+make train       # or: .venv/bin/python ml/train.py --skip-optuna | --optuna-trials 20
+make evaluate    # reports + confusion matrices on the held-out test split
 ```
 
-The training process produces:
-
-``` text
-protocol_model.joblib
-traffic_model.joblib
-encoder.joblib
-optuna_study_traffic.pkl
-```
-
-Evaluation can be performed with:
-
-``` bash
-python ml/evaluate.py
-```
-
-Expected evaluation artifacts include:
+`ml/train.py` writes the four model artefacts plus `optuna_study_traffic.pkl`,
+`split.json` (train/val/test session ids) and `training_metadata.json`.
+`ml/evaluate.py` writes:
 
 ``` text
 protocol_classification_report.txt
@@ -822,24 +865,24 @@ protocol_confusion_matrix.png
 traffic_confusion_matrix.png
 ```
 
+The inference contract is documented in `ml/INFERENCE_SCHEMA.md`.
+
 ------------------------------------------------------------------------
 
 # 🔧 Configuration
 
-Create a local environment file:
-
-``` bash
-cp .env.example .env
-```
-
-Important configuration variables include:
+`start.sh` creates `.env` from `.env.example` on first run. Key variables:
 
 ``` env
-KAFKA_BOOTSTRAP=localhost:9092
-ES_HOST=localhost
-ES_PORT=9200
-STRONGSWAN_CTL=...
+KAFKA_BOOTSTRAP=localhost:29092     # Kafka listener exposed to the host
+ES_HOST=http://localhost:9200       # full URL (or host + ES_PORT)
+ES_INDEX=ipsec_sessions
+IPSEC_PSK=change-me                 # lab pre-shared key
 ```
+
+Optional overrides: `API_PORT` (8000), `DASHBOARD_PORT` (5173), `CAPTURES_DIR`
+(`capture/pcaps`), `MODEL_DIR` (`ml`), `CORS_ORIGINS`, and `VITE_API_BASE_URL`
+for the dashboard (`VITE_USE_MOCKS=true` serves mock data without a backend).
 
 Do not commit secrets or machine-specific credentials.
 
@@ -847,85 +890,34 @@ Do not commit secrets or machine-specific credentials.
 
 # ▶️ Running the Project
 
-## 1. Start the infrastructure
+Use `./start.sh` / `./stop.sh` (see Quick Start). To run the pieces by hand
+from the repository root (with `.venv` active and `.env` exported):
 
 ``` bash
-docker compose up -d
+docker compose up -d zookeeper kafka kafka-init elasticsearch
+python kafka/health_check.py && python es/init_index.py && python es/health_check.py
+uvicorn api.main:app --port 8000
+python kafka/consumer.py
+python kafka/metrics_producer.py
+python -m features.watcher                      # watches capture/pcaps
+python -m features.watcher --replay capture/pcaps   # or replay existing PCAPs
+cd dashboard && npm ci && npm run dev
 ```
 
-Check the running containers:
+> The `kafka/` scripts must be run by path (`python kafka/consumer.py`):
+> `python -m kafka.…` resolves to the kafka-python library, which shares the name.
+
+Capture lab (requires the lab containers):
 
 ``` bash
-docker compose ps
+make matrix          # every mode × cipher × DH × PFS combo, with traffic, into capture/pcaps
 ```
 
-------------------------------------------------------------------------
-
-## 2. Verify Kafka
+Tests:
 
 ``` bash
-python kafka/health_check.py
-```
-
-The expected Kafka topics are:
-
-``` text
-raw-features
-inference-results
-alerts
-pipeline-metrics
-```
-
-------------------------------------------------------------------------
-
-## 3. Verify Elasticsearch
-
-``` bash
-python es/health_check.py
-```
-
-The Elasticsearch service should be reachable on:
-
-``` text
-http://localhost:9200
-```
-
-------------------------------------------------------------------------
-
-## 4. Start the FastAPI backend
-
-From the API directory:
-
-``` bash
-uvicorn main:app --reload --port 8000
-```
-
-The API will be available at:
-
-``` text
-http://localhost:8000
-```
-
-FastAPI documentation:
-
-``` text
-http://localhost:8000/docs
-```
-
-------------------------------------------------------------------------
-
-## 5. Start the dashboard
-
-``` bash
-cd dashboard
-npm install
-npm run dev
-```
-
-The Vite development server normally runs on:
-
-``` text
-http://localhost:5173
+make test            # unit tests (pytest)
+make e2e             # end-to-end test against a running stack
 ```
 
 ------------------------------------------------------------------------

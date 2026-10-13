@@ -550,3 +550,40 @@ Allowed origin: `http://localhost:5173` (Vite dev server).
   a.href = url; a.download = `report_${sessionId}.pdf`; a.click();
   URL.revokeObjectURL(url);
   ```
+---
+
+## Implementation notes (backend as built)
+
+The API in `api/main.py` implements this contract. Everything below is
+**additive** — no contract field was renamed or removed.
+
+- **`es_id`** is a deterministic UUID5 of `session_id`, so re-analysing a session
+  overwrites its document instead of duplicating it. `GET /sessions/{id}` and
+  `GET /report/{id}` accept either the `es_id` or the raw `session_id`.
+- **`ts`** is stored and returned as ISO 8601 (`ts_epoch` keeps the original float).
+- **Request body**: `mode`, `cipher_suite`, `auth_algo`, `dh_group`, `pfs_enabled`
+  and `key_lifetime_sec` may be `null`. The IKE parser leaves them null when they
+  are encrypted (IKE_AUTH / CREATE_CHILD_SA). The protocol model then fills them
+  in, and `config_source` records `"parser"` or `"model"` per field. Plaintext
+  parser values are never overridden. Unknown body keys are ignored.
+- **Extra response fields**: `anomaly_label`, `recommendations` (ordered like
+  `risk_flags`), `config_evidence` (SHAP for the protocol model),
+  `predicted_config`, `config_confidence`, `config_source`, `analyzed_at`,
+  `adjusted_security_score` / `adjusted_severity` and `correlation` (repeated
+  weak-config sessions from the same initiator IP in the last hour, `api/correlator.py`).
+- **List items** (`GET /sessions`) also include `risk_flags`, `report_id`,
+  `adjusted_*` and `correlation.pattern_detected`. Extra filters: `initiator_ip`,
+  `pattern_detected`.
+- **`GET /stats`** also returns `average_score`, `pattern_detected_distribution`
+  and `top_attack_ips`.
+- **`GET /health`** also returns `correlator` and `timestamp`. On failure, the
+  `kafka` and `elasticsearch` objects carry a `detail` string, and `kafka.missing_topics`
+  lists any absent topics.
+- **New endpoint** `GET /correlations/{initiator_ip}?window_minutes=60` returns
+  paginated sessions for one IP plus `weak_sessions`, `pattern_sessions` and `average_score`.
+- **Errors** always use the envelope. Codes: `SESSION_NOT_FOUND`, `VALIDATION_ERROR`
+  (422, `detail` = field errors), `BAD_REQUEST` (e.g. unparseable `start_time`),
+  `PAGE_OUT_OF_RANGE`, `ELASTICSEARCH_UNAVAILABLE` (503),
+  `REPORT_RENDERER_UNAVAILABLE`, `INTERNAL_ERROR`.
+- **Anomaly labels** are calibrated on the trained IsolationForest's own threshold
+  rather than the fixed 0.40 / 0.55 above (see `ml/INFERENCE_SCHEMA.md`).
